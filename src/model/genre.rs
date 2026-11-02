@@ -68,6 +68,10 @@ impl Genre {
         self.imp().name.borrow().to_string().clone()
     }
 
+    pub fn name_ref(&self) -> std::cell::Ref<'_, str> {
+        std::cell::Ref::map(self.imp().name.borrow(), |value| value.as_str())
+    }
+
     pub fn sort_name(&self) -> String {
         self.imp().sort_name.borrow().to_string()
     }

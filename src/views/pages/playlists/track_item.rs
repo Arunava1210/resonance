@@ -96,5 +96,9 @@ impl PlaylistDetailTrackItem {
         self.imp().search_string.borrow().clone()
     }
 
+    pub fn search_string_ref(&self) -> std::cell::Ref<'_, str> {
+        std::cell::Ref::map(self.imp().search_string.borrow(), |value| value.as_str())
+    }
+
 }
     

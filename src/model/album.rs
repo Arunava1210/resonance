@@ -126,6 +126,10 @@ impl Album {
         self.imp().title.borrow().clone()
     }
 
+    pub fn title_ref(&self) -> std::cell::Ref<'_, str> {
+        std::cell::Ref::map(self.imp().title.borrow(), |value| value.as_str())
+    }
+
     pub fn sort_title(&self) -> String {
         self.imp().sort_title.borrow().clone()
     }
@@ -136,6 +140,10 @@ impl Album {
 
     pub fn artist(&self) -> String {
         self.imp().album_artist.borrow().clone()
+    }
+
+    pub fn artist_ref(&self) -> std::cell::Ref<'_, str> {
+        std::cell::Ref::map(self.imp().album_artist.borrow(), |value| value.as_str())
     }
 
     pub fn sort_artist(&self) -> String {
@@ -168,6 +176,10 @@ impl Album {
 
     pub fn search_string(&self) -> String {
         self.imp().search_string.borrow().clone()
+    }
+
+    pub fn search_string_ref(&self) -> std::cell::Ref<'_, str> {
+        std::cell::Ref::map(self.imp().search_string.borrow(), |value| value.as_str())
     }
 
     pub fn sort_string(&self) -> String {

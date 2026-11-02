@@ -121,50 +121,50 @@ mod imp {
                 SearchSortObject::Album => {
                     let album = search_obj.downcast_ref::<Album>().unwrap();
                     match self.method.get() {
-                        SearchMethod::Full => album.search_string(),
-                        SearchMethod::Track => album.title(),
-                        SearchMethod::Album => album.title(),
-                        SearchMethod::Artist => album.artist(),
-                        SearchMethod::Genre => album.genre(),
-                        SearchMethod::ReleaseDate => album.date(),
+                        SearchMethod::Full => album.search_string_ref(),
+                        SearchMethod::Track => album.title_ref(),
+                        SearchMethod::Album => album.title_ref(),
+                        SearchMethod::Artist => album.artist_ref(),
+                        SearchMethod::Genre => album.genre_ref(),
+                        SearchMethod::ReleaseDate => album.date_ref(),
                     }
                 },
                 SearchSortObject::Track => {
                     let track = search_obj.downcast_ref::<Track>().unwrap();
                     match self.method.get() {
-                        SearchMethod::Full => track.search_string(),
-                        SearchMethod::Track => track.title(),
-                        SearchMethod::Album => track.album(),
-                        SearchMethod::Artist => track.artist(),
-                        SearchMethod::Genre => track.genre(),
-                        SearchMethod::ReleaseDate => track.date(),
+                        SearchMethod::Full => track.search_string_ref(),
+                        SearchMethod::Track => track.title_ref(),
+                        SearchMethod::Album => track.album_ref(),
+                        SearchMethod::Artist => track.artist_ref(),
+                        SearchMethod::Genre => track.genre_ref(),
+                        SearchMethod::ReleaseDate => track.date_ref(),
                     }
                 },
                 SearchSortObject::QueueTrack => {
                     let track = search_obj.downcast_ref::<TrackItem>().unwrap();
-                    track.search_string()
+                    track.search_string_ref()
                 },
                 SearchSortObject::PlaylistTrack => {
                     let track = search_obj.downcast_ref::<PlaylistDetailTrackItem>().unwrap();
-                    track.search_string()
+                    track.search_string_ref()
                 },
                 SearchSortObject::Playlist => {
                     let playlist = search_obj.downcast_ref::<Playlist>().unwrap();
-                    playlist.title()
+                    playlist.title_ref()
                 },
                 SearchSortObject::Artist => {
                     let artist = search_obj.downcast_ref::<Artist>().unwrap();
-                    artist.name()
+                    artist.name_ref()
                 },
                 SearchSortObject::Genre => {
                     let genre = search_obj.downcast_ref::<Genre>().unwrap();
-                    genre.name()
+                    genre.name_ref()
                 },
 
             };
 
             if let Some(search) = self.search.borrow().as_ref() {
-                self.matcher.fuzzy_match(&search_key, search).is_some() || search.is_empty()
+                self.matcher.fuzzy_match(&*search_key, search).is_some() || search.is_empty()
             } else {
                 true
             }
