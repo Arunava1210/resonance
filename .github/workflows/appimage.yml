@@ -127,7 +127,8 @@ jobs:
           test -x dist/Resonance-x86_64.AppImage
           test -f AppDir/usr/share/resonance/resonance.gresource
           test -d AppDir/usr/lib/gstreamer-1.0
-          test -d AppDir/usr/lib/gtk-4.0
+          gtk_modules="$(find AppDir/usr/lib -type d -name gtk-4.0 -print -quit)"
+          test -n "$gtk_modules"
           temp_home="$(mktemp -d)"
           mkdir -p "$temp_home/config" "$temp_home/data" "$temp_home/cache"
           set +e
