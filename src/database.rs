@@ -49,7 +49,9 @@ pub enum DatabaseAction {
     ChangePlaylistTitleAndOrDescription((i64, Option<String>, Option<String>)),
     AddTracksToPlaylist((i64, String, Vec<i64>)),
     RemoveTrackFromPlaylist(i64),
-    ReorderPlaylist((i64, usize, usize))
+    ReorderPlaylist((i64, usize, usize)),
+    SetImportMessage(String),
+    SetImportPercentage(String),
 }
 
 #[derive(Debug)]
@@ -187,6 +189,18 @@ impl Database {
                 match self.construct_from_tags(folder, tags, cover_art_bytes) {
                     Ok(_) => (),
                     Err(e) => error!("Unable to contrust database from tags: {}", e),
+                }
+            },
+            // Actions arrive on the GLib main context, so GTK widgets are only
+            // touched by the UI thread.
+            DatabaseAction::SetImportMessage(message) => {
+                if let Some(window) = util::window() {
+                    window.set_import_message(&message);
+                }
+            },
+            DatabaseAction::SetImportPercentage(message) => {
+                if let Some(window) = util::window() {
+                    window.set_import_percentage(&message);
                 }
             },
             DatabaseAction::TryLoadingDataBase => {
