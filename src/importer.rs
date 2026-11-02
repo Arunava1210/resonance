@@ -5,11 +5,14 @@
  */
 
 use gtk::{gio, glib::Sender};
+#[cfg(not(feature = "native-importer"))]
 use gtk_macros::send;
 
 #[cfg(not(feature = "native-importer"))]
 use std::cell::RefCell;
-use std::{collections::HashMap, error::Error, fmt, fs};
+use std::{collections::HashMap, error::Error, fs};
+#[cfg(not(feature = "native-importer"))]
+use std::fmt;
 use log::{debug, error};
 use rusqlite::Transaction;
 #[cfg(not(feature = "native-importer"))]
@@ -70,7 +73,8 @@ impl fmt::Display for ImportError {
 #[cfg(not(feature = "native-importer"))]
 impl Error for ImportError {}
 
-#[derive(Debug, FromPyObject, Clone)]
+#[derive(Debug, Clone)]
+#[cfg_attr(not(feature = "native-importer"), derive(FromPyObject))]
 pub enum MapVal {
     Str(String),
     List(Vec<String>),
@@ -249,14 +253,12 @@ impl Importer {
             let mut albumartist_tag = String::new();
             let mut date_tag = String::new();
             let mut genre_tag = String::new();
-            let mut cover_art = None;
+            let cover_art = cover_art_map.get(uri);
             let mut duration_tag = None;
             let mut disc_number_tag = None;
             let mut track_number_tag = None;
             let mut filetype_tag = String::new();
-
-            cover_art = cover_art_map.get(uri);
-            
+\n            
             for (type_key, type_map) in track_map {
 
                 match type_key.as_str() {
