@@ -379,28 +379,30 @@ impl Model {
             return Err(Box::new(ModelError("Playlist Query Empty".into())));
         }
 
-        let mut playlist_map = HashMap::new();
+        // Fetch all playlist entries in one joined query. The previous code
+        // issued one additional SQL query per playlist and silently omitted
+        // empty playlists from the model.
+        let entries = database.query_playlist_entries()?;
+        let mut entries_by_playlist: HashMap<i64, Vec<(i64, i64, i64)>> = HashMap::new();
+        for (entry_id, playlist_id, position, track_id) in entries {
+            entries_by_playlist
+                .entry(playlist_id)
+                .or_default()
+                .push((entry_id, position, track_id));
+        }
+
+        let mut playlist_map = HashMap::with_capacity(list.len());
         for (id, title, description, creation_time, modify_time) in list {
             let playlist = Rc::new(Playlist::new(id, title, description, creation_time, modify_time));
 
-            let list = match database.query_playlist_entries_by_playlist_id(id) {
-                Ok(list) => list,
-                Err(e) => {
-                    error!("Error retrieving entries for playlist {}: {}", id, e);
-                    continue;
-                },
-            };
-            
-            if list.is_empty() {
-                debug!("playlist entry list empty for playlist {}", id);
-                continue;
-            }
-
-            for (id, playlist_position, track_id) in list {
+            if let Some(entries) = entries_by_playlist.remove(&id) {
+                for (entry_id, playlist_position, track_id) in entries {
                     let track = self.track(track_id)?;
-                    playlist.add_track(id, playlist_position, track);
+                    playlist.add_track(entry_id, playlist_position, track);
+                }
             }
 
+            // Keep empty playlists visible; they are valid user-created objects.
             playlist_map.insert(id, playlist);
         }
         
