@@ -54,6 +54,7 @@ version = "0.20"
 [dependencies.pyo3]
 version = "0.17.3"
 features = ["auto-initialize"]
+optional = true
 
 [dependencies.audex]
 version = "0.2.0"
@@ -62,6 +63,8 @@ optional = true
 [features]
 default = ["native-importer"]
 native-importer = ["dep:audex"]
+# Compatibility build only; the default application uses the native Rust reader.
+python-importer = ["dep:pyo3"]
 
 [profile.release]
 opt-level = 3
