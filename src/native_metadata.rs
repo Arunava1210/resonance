@@ -371,8 +371,8 @@ fn first_id3_picture(tags: Option<&audex::id3::ID3Tags>) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::is_supported_audio_file;
-    use std::path::Path;
+    use super::{extract_audio_file, is_supported_audio_file, MapVal};
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn recognizes_existing_mutagen_extensions_case_insensitively() {
@@ -408,7 +408,7 @@ mod tests {
             let (uri, grouped_tags, _) = extract_audio_file(&path)
                 .unwrap_or_else(|error| panic!("Failed to parse {}: {}", filename, error));
 
-            assert_eq!(uri, path.to_string_lossy());
+            assert_eq!(uri, path.to_string_lossy().into_owned());
             assert!(grouped_tags.contains_key("str_list"), "{} has no string tags", filename);
             assert!(grouped_tags.contains_key("float"), "{} has no stream duration", filename);
 
