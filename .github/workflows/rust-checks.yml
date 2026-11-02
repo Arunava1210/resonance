@@ -56,6 +56,11 @@ jobs:
       - name: Commit generated lockfile on the development branch
         if: github.event_name == 'push' && github.ref_name == 'rust-native-performance'
         run: |
+          # Another source commit may land while this job is building. Move
+          # the commit base to the latest branch without discarding Cargo's
+          # generated lockfile, then commit only Cargo.lock.
+          git fetch origin "${GITHUB_REF_NAME}"
+          git reset --mixed "origin/${GITHUB_REF_NAME}"
           if ! git diff --quiet -- Cargo.lock; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
