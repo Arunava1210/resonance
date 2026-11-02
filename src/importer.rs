@@ -555,29 +555,34 @@ mod tests {
     }
 
     #[test]
-    fn only_changes_selection_when_another_id_becomes_more_frequent() {
+    fn keeps_current_selection_while_other_id_is_tied() {
+        let mut counter = AlbumArtCounter::default();
+        assert_eq!(counter.record(4), Some(4));
+        assert_eq!(counter.record(9), None);
+    }
+
+    #[test]
+    fn changes_selection_when_another_id_becomes_more_frequent() {
         let mut counter = AlbumArtCounter::default();
         assert_eq!(counter.record(4), Some(4));
         assert_eq!(counter.record(9), None);
         assert_eq!(counter.record(9), Some(9));
-        assert_eq!(counter.record(4), None);
         assert_eq!(counter.record(9), None);
     }
 
     #[test]
-    fn keeps_first_seen_id_when_frequencies_tie() {
+    fn restores_first_seen_id_when_frequencies_tie_again() {
         let mut counter = AlbumArtCounter::default();
         assert_eq!(counter.record(9), Some(9));
         assert_eq!(counter.record(4), None);
-        assert_eq!(counter.record(4), None);
-        assert_eq!(counter.record(9), None);
+        assert_eq!(counter.record(4), Some(4));
+        assert_eq!(counter.record(9), Some(9));
     }
 
     #[test]
-    fn switches_winner_when_later_count_breaks_a_tie() {
+    fn switches_winner_when_new_id_becomes_more_frequent() {
         let mut counter = AlbumArtCounter::default();
         assert_eq!(counter.record(9), Some(9));
-        assert_eq!(counter.record(4), None);
         assert_eq!(counter.record(4), None);
         assert_eq!(counter.record(4), Some(4));
     }
