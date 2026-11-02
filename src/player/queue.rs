@@ -139,8 +139,10 @@ impl Queue {
     }
 
     pub fn add_tracks(&self, tracks: Vec<Rc<Track>>) {
-        self.sequential_queue.borrow_mut().append(tracks.clone().as_mut());
-        self.queue.borrow_mut().append(tracks.clone().as_mut());
+        self.sequential_queue
+            .borrow_mut()
+            .extend(tracks.iter().cloned());
+        self.queue.borrow_mut().extend(tracks);
         self.current_song_update();
         if self.repeat_mode.get() == RepeatMode::Shuffle {
             self.shuffle_tracks();
@@ -354,12 +356,12 @@ impl Queue {
     }
 
     fn calculate_time_remaining(&self) {
-        let pos = self.position() as usize;
-        let tracks = &self.tracks()[pos..];
-        let mut total_duration = 0.0;
-        for track in tracks.iter() {
-            total_duration += track.duration()
-        }
+        let queue = self.queue.borrow();
+        let pos = (self.position() as usize).min(queue.len());
+        let total_duration = queue[pos..]
+            .iter()
+            .map(|track| track.duration())
+            .sum();
         send!(self.sender, QueueAction::QueueDuration(total_duration));
     }
 
