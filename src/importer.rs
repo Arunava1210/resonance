@@ -7,10 +7,12 @@
 use gtk::{gio, glib::Sender};
 use gtk_macros::send;
 
+#[cfg(not(feature = "native-importer"))]
 use std::cell::RefCell;
 use std::{collections::HashMap, error::Error, fmt, fs};
 use log::{debug, error};
 use rusqlite::Transaction;
+#[cfg(not(feature = "native-importer"))]
 use pyo3::prelude::*;
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
@@ -52,16 +54,20 @@ mod metadata_number_tests {
 
 use super::database::DatabaseAction;
 use super::util;
+#[cfg(not(feature = "native-importer"))]
 use std::time::{Duration, Instant};
 
+#[cfg(not(feature = "native-importer"))]
 #[derive(Debug)]
 struct ImportError(String);
+#[cfg(not(feature = "native-importer"))]
 impl fmt::Display for ImportError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Import error: {}", self.0)
         
     }
 }
+#[cfg(not(feature = "native-importer"))]
 impl Error for ImportError {}
 
 #[derive(Debug, FromPyObject, Clone)]
@@ -73,12 +79,14 @@ pub enum MapVal {
     Bytes(Vec<u8>),
 }
 
+#[cfg(not(feature = "native-importer"))]
 #[pyclass]
 struct LoggingStdout {
     last_update_time: RefCell<Option<Instant>>,
     sender: Sender<DatabaseAction>,
 }
 
+#[cfg(not(feature = "native-importer"))]
 impl LoggingStdout {
     // Construct this Python-backed object from Rust so the GLib sender never
     // crosses the Python constructor boundary.
@@ -90,6 +98,7 @@ impl LoggingStdout {
     }
 }
 
+#[cfg(not(feature = "native-importer"))]
 #[pymethods]
 impl LoggingStdout {
     fn write(&self, data: &str) {
@@ -122,6 +131,34 @@ impl Importer {
         }
     }
 
+    #[cfg(feature = "native-importer")]
+    pub fn extract_folder(&self, folder_path: String, sender: Sender<DatabaseAction>) {
+        std::thread::spawn(move || {
+            let _ = sender.send(DatabaseAction::SetImportMessage(
+                "Extracting tags from music files.".to_string()
+            ));
+
+            match crate::native_metadata::scan_folder(
+                std::path::Path::new(&folder_path),
+                sender.clone(),
+            ) {
+                Ok((tags, cover_art)) => {
+                    let _ = sender.send(DatabaseAction::ConstructFromTags((
+                        folder_path,
+                        tags,
+                        cover_art,
+                    )));
+                }
+                Err(error) => {
+                    error!("Native metadata extraction failed: {}", error);
+                }
+            }
+        });
+    }
+
+    // Transitional fallback. The default build uses the Rust-native scanner;
+    // the old PyO3/Mutagen importer remains available only with --no-default-features.
+    #[cfg(not(feature = "native-importer"))]
     pub fn extract_folder(&self, folder_path: String, sender: Sender<DatabaseAction>) {
         std::thread::spawn(move || {
             let _ = sender.send(DatabaseAction::SetImportMessage(
@@ -149,8 +186,6 @@ impl Importer {
                     .getattr("tags_and_cover_art")?
                     .call1((&folder_path,))?
                     .into();
-
-                debug!("retrieving tags & cover art ... ");
 
                 let all: (
                     HashMap<String, HashMap<String, HashMap<String, MapVal>>>,
