@@ -83,7 +83,9 @@ jobs:
             curl -fsSL "$base/$file" -o "$fixtures/$file"
           done
           cp "$fixtures/with-id3.aif" "$fixtures/with-id3.aiff"
+          cp "$fixtures/silence-1.wma" "$fixtures/sample.asf"
           cp "$fixtures/silence-1.wma" "$fixtures/sample.wmv"
+          cp "$fixtures/alac.m4a" "$fixtures/alac.mp4"
           echo "RESONANCE_AUDIO_FIXTURES=$fixtures" >> "$GITHUB_ENV"
 
       - name: Run tests
