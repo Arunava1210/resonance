@@ -205,10 +205,9 @@ impl Model {
             imp.art.replace(Some(HashMap::new()));
             return Err(Box::new(ModelError("Art Query Empty".into())));
         }
-        let mut art_map = HashMap::new();
-        for (id, data) in list {
-            let art = Rc::new(CoverArt::new(id, data));
-            art_map.insert(id, art);
+        let mut art_map = HashMap::with_capacity(list.len());
+        for id in list {
+            art_map.insert(id, Rc::new(CoverArt::placeholder(id)));
         }
         imp.art.replace(Some(art_map));
         Ok(())
@@ -490,13 +489,25 @@ impl Model {
     }
 
     pub fn cover_art(&self, id: i64) -> Result<Rc<CoverArt>, String> {
-        match self.imp().art.borrow().as_ref() {
-            Some(map) => match map.get(&id) {
-                Some(art) => return Ok(art.clone()),
-                None => return Err("id not in map".to_string()),
-            },
-            None => return Err("hashmap does not exist".to_string()),
+        // Clone the handle and release the map borrow before performing a DB read.
+        let art = {
+            let art_map = self.imp().art.borrow();
+            match art_map.as_ref() {
+                Some(map) => map.get(&id).cloned()
+                    .ok_or_else(|| "id not in map".to_string())?,
+                None => return Err("hashmap does not exist".to_string()),
+            }
+        };
+
+        // Cover images are fetched from SQLite only on first use. Subsequent
+        // accesses reuse the compressed bytes / decoded pixbuf cache.
+        if !art.has_data() {
+            let (_, data) = self.database().query_art_by_id(id as u64)
+                .map_err(|error| error.to_string())?;
+            art.load(id, data);
         }
+
+        Ok(art)
     }
 
     pub fn artist_image(&self, id: i64) -> Result<Rc<ArtistImage>, String> {
