@@ -532,6 +532,13 @@ impl AlbumArtCounter {
 
         let becomes_best = match self.best {
             None => true,
+            Some((best_id, best_count, best_position)) if best_id == id => {
+                // The current winner remains the winner as its own frequency
+                // increases. Keep its count current without asking SQLite to
+                // rewrite the same album artwork on every subsequent track.
+                self.best = Some((id, count, first_position));
+                false
+            }
             Some((_, best_count, best_position)) => {
                 count > best_count || (count == best_count && first_position < best_position)
             }
