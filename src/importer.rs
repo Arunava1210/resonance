@@ -238,7 +238,6 @@ impl Importer {
         let mut added_genres: HashMap<String, i64> = HashMap::new();
         let mut added_artists: HashMap<String, i64> = HashMap::new();
         let mut added_albums: HashMap<String, i64> = HashMap::new();
-        let mut added_tracks: HashMap<String, i64> = HashMap::new();
         let mut added_art: HashMap<&[u8], i64> = HashMap::new();
         let mut album_art: HashMap<i64, AlbumArtCounter> = HashMap::new();
 
@@ -359,12 +358,6 @@ impl Importer {
 
             let album_key = format!("{}{}", album_tag, albumartist_tag);
             let is_orphan_album = album_key == "Unknown AlbumUnknown Artist";
-            let song_key = format!("{}{}{}{}", title_tag, album_tag, albumartist_tag, uri);
-
-            if added_tracks.contains_key(&song_key) {
-                //debug!("{} already added.", title_tag);
-                continue;
-            }
 
             let discnumber = match disc_number_tag {
                 Some(number) => number,
@@ -377,7 +370,7 @@ impl Importer {
                     if is_orphan_album {
                         existing_orphan_tracks + added_orphan_tracks + 1
                     } else {
-                        error!("No track number for {}", song_key);
+                        error!("No track number for {}", uri);
                         1
                     }
                 },
@@ -385,23 +378,19 @@ impl Importer {
    
             // add genre to the database table
             let genre_id = if !genre_tag.is_empty() {
-                if !added_genres.contains_key(&genre_tag) {
-                    Some(Database::add_genre(tx, genre_tag.clone())?)
-                } else {
-                    //debug!("Already added genre {}, retrieving from map.", genre_tag);
-                    Some(added_genres[&genre_tag])
-                }
+                Some(match added_genres.get(&genre_tag) {
+                    Some(id) => *id,
+                    None => Database::add_genre(tx, genre_tag.clone())?,
+                })
             } else {
                 None
             };
 
             // add artists to the database table
             let artist_id = if !albumartist_tag.is_empty() {
-                if !added_artists.contains_key(&albumartist_tag) {
-                    Database::add_artist(tx, albumartist_tag.clone())?
-                } else {
-                    //debug!("Already added artist {}, retrieving from map.", albumartist_tag);
-                    added_artists[&albumartist_tag]
+                match added_artists.get(&albumartist_tag) {
+                    Some(id) => *id,
+                    None => Database::add_artist(tx, albumartist_tag.clone())?,
                 }
             } else {
                 error!("No artist found for track {}", title_tag);
@@ -411,19 +400,18 @@ impl Importer {
             // add cover art to the database table
             let cover_art_id = if let Some(bytes) = cover_art {
                 let bytes = bytes.as_slice();
-                if added_art.contains_key(&bytes) {
-                    //debug!("Already added cover_art, retrieving from map.");
-                    added_art.get(&bytes).cloned()
-                } else {
-                    Some(Database::add_cover_art(tx, bytes)?)
+                match added_art.get(bytes) {
+                    Some(id) => Some(*id),
+                    None => Some(Database::add_cover_art(tx, bytes)?),
                 }
             } else {
                 None
             };
             
             // add albums to the database table
-            let album_id = if !added_albums.contains_key(&album_key) {
-                Database::add_album_full(
+            let album_id = match added_albums.get(&album_key) {
+                Some(id) => *id,
+                None => Database::add_album_full(
                     tx,
                     album_tag.clone(),
                     artist_tag,
@@ -432,16 +420,13 @@ impl Importer {
                     cover_art_id,
                     artist_id,
                     genre_id,
-                )?
-            } else {
-                //debug!("Already added {}, retrieving from map.", album_key);
-                added_albums[&album_key]
+                )?,
             };
         
             let duration = match duration_tag {
                 Some(d) => *d,
                 None => {
-                    error!("No track duration for {}", song_key);
+                    error!("No track duration for {}", uri);
                     continue;
                 },
             };
@@ -456,7 +441,7 @@ impl Importer {
             //     w.set_import_message(&format!("Adding: {}", uri.clone()));
             // }
 
-            let track_id =  Database::add_track_full(
+            Database::add_track_full(
                 tx,
                 title_tag,
                 filetype_tag,
@@ -499,7 +484,6 @@ impl Importer {
             }
 
             added_albums.insert(album_key, album_id);
-            added_tracks.insert(song_key, track_id);
             if is_orphan_album {
                 added_orphan_tracks += 1;
             }
