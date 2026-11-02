@@ -43,6 +43,16 @@ glib::wrapper! {
 
 
 impl CoverArt {
+    pub fn placeholder(id: i64) -> CoverArt {
+        let cover_art: CoverArt = glib::Object::builder::<CoverArt>().build();
+        cover_art.imp().id.set(id);
+        cover_art
+    }
+
+    pub fn has_data(&self) -> bool {
+        self.imp().capl.borrow().is_some()
+    }
+
     pub fn new(id: i64, data: Vec<u8>)-> CoverArt {
         let cover_art: CoverArt = glib::Object::builder::<CoverArt>().build();
         cover_art.load(id, data);
