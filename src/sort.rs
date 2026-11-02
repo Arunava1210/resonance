@@ -66,6 +66,7 @@ mod imp {
         pub search: RefCell<Option<String>>,
         pub type_: Cell<SearchSortObject>,
         pub method: Cell<SortMethod>,
+        pub matcher: SkimMatcherV2,
     }
 
     #[glib::object_subclass]
@@ -273,10 +274,8 @@ mod imp {
 
                     if let Some(search) = self.search.borrow().as_ref() {
                         if !search.is_empty() {
-                            debug!("search string: {}", search);
-                            let matcher = SkimMatcherV2::default();
-                            let item1_score = matcher.fuzzy_match(&item1_key, search);
-                            let item2_score = matcher.fuzzy_match(&item2_key, search);
+                            let item1_score = self.matcher.fuzzy_match(&item1_key, search);
+                            let item2_score = self.matcher.fuzzy_match(&item2_key, search);
                             let order = item1_score.cmp(&item2_score).reverse();
         
                             if order != std::cmp::Ordering::Equal {

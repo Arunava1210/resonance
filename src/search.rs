@@ -79,6 +79,7 @@ mod imp {
         pub search: RefCell<Option<String>>,
         pub type_: Cell<SearchSortObject>,
         pub method: Cell<SearchMethod>,
+        pub matcher: SkimMatcherV2,
     }
 
     #[glib::object_subclass]
@@ -163,8 +164,7 @@ mod imp {
             };
 
             if let Some(search) = self.search.borrow().as_ref() {
-                let matcher = SkimMatcherV2::default();
-                matcher.fuzzy_match(&search_key, search).is_some() || search.is_empty()
+                self.matcher.fuzzy_match(&search_key, search).is_some() || search.is_empty()
             } else {
                 true
             }
