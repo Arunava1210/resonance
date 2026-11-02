@@ -40,7 +40,7 @@ jobs:
             libgstreamer-plugins-base1.0-dev \
             libgtk-4-dev
 
-      - name: Install Python 3.11 for the existing PyO3 bridge
+      - name: Install Python 3.11 for the optional legacy importer
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -54,8 +54,11 @@ jobs:
       - name: Generate Meson build configuration
         run: meson setup build --prefix=/usr
 
-      - name: Check compilation and resolve dependency lockfile
-        run: cargo check
+      - name: Check native Rust application
+        run: cargo check --locked
+
+      - name: Check optional legacy Python importer
+        run: cargo check --locked --no-default-features --features python-importer
 
       - name: Commit generated lockfile on the development branch
         if: github.event_name == 'push' && github.ref_name == 'rust-native-performance'
