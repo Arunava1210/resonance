@@ -244,7 +244,13 @@ impl Importer {
         let mut added_orphan_tracks = 0u32;
         let current_folder_id = database.add_folder(&tx, folder_uri)?;
 
-        for (uri, track_map) in &tags {
+        // Metadata files are extracted in parallel, but the SQLite import
+        // should remain deterministic across runs. HashMap iteration order is
+        // intentionally unspecified, so sort paths before assigning database IDs.
+        let mut ordered_tags: Vec<_> = tags.iter().collect();
+        ordered_tags.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
+
+        for (uri, track_map) in ordered_tags {
             debug!("getting tags from:\n\t -> {:?}", uri);
 
             let mut title_tag = String::new();
