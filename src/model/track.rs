@@ -9,13 +9,49 @@ use gtk::{glib, gio};
 use glib::prelude::ToVariant;
 
 use std::{cell::Cell, cell::RefCell};
-use once_cell::sync::Lazy;
-use regex::Regex;
 
-// Compile once rather than once per track during large library imports.
-static SORT_ARTICLE_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(the|a|an)\s+").expect("valid article-sorting regex")
-});
+// Avoid invoking the regular-expression engine for every title, album and
+// artist while constructing large track models.
+fn sort_value(value: &str) -> String {
+    let lowercase = value.to_lowercase();
+
+    for article in ["the", "a", "an"] {
+        if let Some(remainder) = lowercase.strip_prefix(article) {
+            if remainder.chars().next().is_some_and(char::is_whitespace) {
+                return remainder
+                    .trim_start_matches(char::is_whitespace)
+                    .to_owned();
+            }
+        }
+    }
+
+    lowercase
+}
+
+#[cfg(test)]
+mod sort_value_tests {
+    use super::sort_value;
+
+    #[test]
+    fn strips_leading_articles_case_insensitively() {
+        assert_eq!(sort_value("The Beatles"), "beatles");
+        assert_eq!(sort_value("A Tribe Called Quest"), "tribe called quest");
+        assert_eq!(sort_value("An Example"), "example");
+    }
+
+    #[test]
+    fn strips_all_leading_whitespace_after_article() {
+        assert_eq!(sort_value("The  Beatles"), "beatles");
+        assert_eq!(sort_value("An\tExample"), "example");
+    }
+
+    #[test]
+    fn preserves_words_without_an_article_prefix() {
+        assert_eq!(sort_value("Theatre"), "theatre");
+        assert_eq!(sort_value("Anarchy"), "anarchy");
+        assert_eq!(sort_value(" Beatles"), " beatles");
+    }
+}
 
 mod imp {
     use super::*;
@@ -84,20 +120,20 @@ impl Track {
     pub fn load_info(&self, id: i64, title: String, album_name: String, album_artist: String, filetype: String, uri: String, date: String, genre: String, duration: f64, track_number: i64, disc_number: i64) {
         let imp = self.imp();
         
-        let lowercase_title = title.to_lowercase();
-        let stripped_title = SORT_ARTICLE_REGEX.replace(&lowercase_title, "");
+        let stripped_title = sort_value(&title);
+        let stripped_artist = sort_value(&album_artist);
+        let stripped_album = sort_value(&album_name);
 
-        let lowercase_artist= album_artist.to_lowercase();
-        let stripped_artist = SORT_ARTICLE_REGEX.replace(&lowercase_artist, "");
+        imp.sort_title.replace(stripped_title.clone());
+        imp.sort_artist.replace(stripped_artist.clone());
+        imp.sort_album.replace(stripped_album.clone());
 
-        let lowercase_album= album_name.to_lowercase();
-        let stripped_album = SORT_ARTICLE_REGEX.replace(&lowercase_album, "");
-        
-        imp.sort_title.replace(format!("{}", stripped_title));
-        imp.sort_artist.replace(format!("{}", stripped_artist));
-        imp.sort_album.replace(format!("{}", stripped_album));
-
-        imp.sort_string.replace(format!("{} {} {}", stripped_title, stripped_album, stripped_artist));
+        imp.sort_string.replace(format!(
+            "{} {} {}",
+            stripped_title,
+            stripped_album,
+            stripped_artist
+        ));
         imp.search_string.replace(format!("{} {} {}", title, album_name, album_artist));
 
         imp.id.set(id);
