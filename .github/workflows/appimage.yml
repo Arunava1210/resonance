@@ -27,6 +27,7 @@ jobs:
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            bash \
             build-essential \
             ca-certificates \
             curl \
@@ -67,6 +68,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build and install into AppDir
+        shell: bash
         run: |
           set -euxo pipefail
           meson setup build --prefix=/usr --libdir=lib --buildtype=release
@@ -75,6 +77,7 @@ jobs:
           DESTDIR="$APPDIR" meson install -C build
 
       - name: Download linuxdeploy and AppImage plugins
+        shell: bash
         run: |
           set -euxo pipefail
           mkdir -p tools
@@ -92,6 +95,7 @@ jobs:
             tools/linuxdeploy-plugin-gstreamer.sh
 
       - name: Bundle GTK4 and GStreamer runtime
+        shell: bash
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
           DEPLOY_GTK_VERSION: "4"
@@ -115,6 +119,7 @@ jobs:
           mv "$appimage" dist/Resonance-x86_64.AppImage
 
       - name: Smoke-test the AppImage
+        shell: bash
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
         run: |
