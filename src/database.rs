@@ -1143,44 +1143,50 @@ impl Database {
         Ok((id as i64, data))
     }
 
-     // Used in model population
+     // Used in model population. Fetch genre-to-album links in one joined query
+    // rather than issuing one SQL statement for every genre.
     pub fn query_genres(&self) -> Result<Vec<(i64, String, Option<Vec<i64>>)>, Box<dyn Error>> {
         let conn = self.imp().conn.borrow();
         let conn = conn.as_ref().ok_or("Connection not established")?;
-        let mut stmt = conn.prepare("SELECT * FROM genres;")?;
-        let rows = stmt.query_map([], |row| {
+        let mut stmt = conn.prepare(
+            "SELECT g.id, g.name, ag.album_id
+             FROM Genres g
+             LEFT JOIN Album_Genre_Junction ag ON ag.genre_id = g.id
+             ORDER BY g.id, ag.album_id;"
+        )?;
+        let mut rows = stmt.query([])?;
+        let mut grouped: Vec<(i64, String, Vec<i64>)> = Vec::new();
+        let mut positions: HashMap<i64, usize> = HashMap::new();
+
+        while let Some(row) = rows.next()? {
             let id: i64 = row.get(0)?;
             let name: String = row.get(1)?;
-            Ok((id, name))
-        })?;
+            let album_id: Option<i64> = row.get(2)?;
 
-        let mut result = Vec::new();
-        for row in rows {
-            let (genre_id, genre_name) = row?;
-
-            let mut albums = Vec::new();
-            let mut stmt = conn.prepare("SELECT album_id from Album_Genre_Junction WHERE genre_id = (?);")?;
-            let album_rows = stmt.query_map([genre_id], |row| {
-                let album_id: i64 = row.get(0)?;
-                Ok(album_id)
-            })?;
-
-            for r in album_rows {
-                let album_id = r?;
-                albums.push(album_id);
-            }
-            
-            if albums.is_empty() {
-                result.push((genre_id, genre_name, None));
+            let position = if let Some(position) = positions.get(&id) {
+                *position
             } else {
-                result.push((genre_id, genre_name, Some(albums)));
+                let position = grouped.len();
+                grouped.push((id, name, Vec::new()));
+                positions.insert(id, position);
+                position
+            };
+
+            if let Some(album_id) = album_id {
+                grouped[position].2.push(album_id);
             }
         }
 
-        Ok(result)
+        Ok(grouped
+            .into_iter()
+            .map(|(id, name, albums)| {
+                let albums = if albums.is_empty() { None } else { Some(albums) };
+                (id, name, albums)
+            })
+            .collect())
     }
 
-    pub fn query_genre_by_id(&self, id: u64) -> Result<(i64, String), Box<dyn Error>> {
+        pub fn query_genre_by_id(&self, id: u64) -> Result<(i64, String), Box<dyn Error>> {
         let conn = self.imp().conn.borrow();
         let conn = conn.as_ref().ok_or("Connection not established")?;
 
@@ -1190,46 +1196,56 @@ impl Database {
         Ok((id as i64, name))
     }
 
-    // Used in model population
+    // Used in model population. Artist albums are loaded in the same query;
+    // the scalar subquery preserves the existing single-image selection.
     pub fn query_artists(&self) -> Result<Vec<(i64, String, Option<i64>, Option<Vec<i64>>)>, Box<dyn Error>> {
         let conn = self.imp().conn.borrow();
         let conn = conn.as_ref().ok_or("Connection not established")?;
-        let mut stmt = conn.prepare("SELECT * FROM Artists;")?;
-        let rows = stmt.query_map([], |row| {
+        let mut stmt = conn.prepare(
+            "SELECT a.id, a.name,
+                    (SELECT image_id
+                     FROM Artist_Discog_Artist_Image_Junction
+                     WHERE artist_id = a.id
+                     LIMIT 1) AS image_id,
+                    aa.album_id
+             FROM Artists a
+             LEFT JOIN Album_Artist_Junction aa ON aa.artist_id = a.id
+             ORDER BY a.id, aa.album_id;"
+        )?;
+        let mut rows = stmt.query([])?;
+        let mut grouped: Vec<(i64, String, Option<i64>, Vec<i64>)> = Vec::new();
+        let mut positions: HashMap<i64, usize> = HashMap::new();
+
+        while let Some(row) = rows.next()? {
             let id: i64 = row.get(0)?;
             let name: String = row.get(1)?;
-            Ok((id, name))
-        })?;
+            let image_id: Option<i64> = row.get(2)?;
+            let album_id: Option<i64> = row.get(3)?;
 
-        let mut result = Vec::new();
-        for row in rows {
-            let (artist_id, artist_name) = row?;
-            let mut stmt = conn.prepare("SELECT image_id FROM Artist_Discog_Artist_Image_Junction WHERE artist_id = (?);")?;
-            let image_id: Option<i64> = stmt.query_row([artist_id], |row| row.get(0)).optional()?;
-            
-            let mut albums = Vec::new();
-            let mut stmt = conn.prepare("SELECT album_id from Album_Artist_Junction WHERE artist_id = (?);")?;
-            let album_rows = stmt.query_map([artist_id], |row| {
-                let album_id: i64 = row.get(0)?;
-                Ok(album_id)
-            })?;
-
-            for r in album_rows {
-                let album_id = r?;
-                albums.push(album_id);
-            }
-            
-            if albums.is_empty() {
-                result.push((artist_id, artist_name, image_id, None));
+            let position = if let Some(position) = positions.get(&id) {
+                *position
             } else {
-                result.push((artist_id, artist_name, image_id, Some(albums)));
+                let position = grouped.len();
+                grouped.push((id, name, image_id, Vec::new()));
+                positions.insert(id, position);
+                position
+            };
+
+            if let Some(album_id) = album_id {
+                grouped[position].3.push(album_id);
             }
         }
 
-        Ok(result)
+        Ok(grouped
+            .into_iter()
+            .map(|(id, name, image_id, albums)| {
+                let albums = if albums.is_empty() { None } else { Some(albums) };
+                (id, name, image_id, albums)
+            })
+            .collect())
     }
 
-    pub fn query_artist_by_id(&self, id: u64) -> Result<(i64, String), Box<dyn Error>> {
+        pub fn query_artist_by_id(&self, id: u64) -> Result<(i64, String), Box<dyn Error>> {
         let conn = self.imp().conn.borrow();
         let conn = conn.as_ref().ok_or("Connection not established")?;
 
@@ -1239,40 +1255,45 @@ impl Database {
         Ok((id as i64, name))
     }
 
-     // Used in model population
+    // Used in model population. Correlated lookups avoid two extra queries
+    // per album while preserving the existing tuple consumed by the model.
     pub fn query_albums(&self) -> Result<Vec<(i64, String, String, String, String, Option<i64>, i64)>, Box<dyn Error>> {
         let conn = self.imp().conn.borrow();
         let conn = conn.as_ref().ok_or("Connection not established")?;
-        let mut stmt = conn.prepare("SELECT * FROM albums;")?;
+        let mut stmt = conn.prepare(
+            "SELECT a.id, a.title, a.artist, a.date, a.genre,
+                    (SELECT cover_art_id
+                     FROM Album_Cover_Art_Junction
+                     WHERE album_id = a.id
+                     LIMIT 1) AS cover_art_id,
+                    (SELECT artist_id
+                     FROM Album_Artist_Junction
+                     WHERE album_id = a.id
+                     LIMIT 1) AS artist_id
+             FROM Albums a
+             ORDER BY a.id;"
+        )?;
 
         let rows = stmt.query_map([], |row| {
-            let id: i64 = row.get(0)?;
-            let title: String = row.get(1)?;
-            let album_artist: String = row.get(2)?;
-            let date: String = row.get(3)?;
-            let genre: String = row.get(4)?;
-
-            Ok((id, title, album_artist, date, genre))
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+            ))
         })?;
-
 
         let mut result = Vec::new();
         for row in rows {
-            let (album_id, title, artist, date, genre) = row?;
-
-            let mut stmt = conn.prepare("SELECT artist_id FROM Album_Artist_Junction WHERE album_id = ?;")?;
-            let album_artist_id: i64 = stmt.query_row([album_id], |row| row.get(0))?;
-
-            let mut stmt = conn.prepare("SELECT cover_art_id FROM Album_Cover_Art_Junction WHERE album_id = ?;")?;
-            let cover_art_id: Option<i64> = stmt.query_row([album_id], |row| row.get(0)).optional()?;
-                          
-            result.push((album_id, title, artist, date, genre, cover_art_id, album_artist_id));
+            result.push(row?);
         }
-
         Ok(result)
     }
 
-    pub fn query_album_by_id(&self, id: u64) -> Result<(i64, String, String, String, String, Option<i64>, i64, Option<i64>), Box<dyn Error>> {
+        pub fn query_album_by_id(&self, id: u64) -> Result<(i64, String, String, String, String, Option<i64>, i64, Option<i64>), Box<dyn Error>> {
         let conn = self.imp().conn.borrow();
         let conn = conn.as_ref().ok_or("Connection not established")?;
         let mut stmt = conn.prepare("SELECT * FROM Albums WHERE id = (?);")?;
@@ -1307,48 +1328,57 @@ impl Database {
     }
 
 
-    // Used in model population
+    // Used in model population. Resolve all track relationships in one
+    // statement instead of four additional SQL queries per track.
     pub fn query_tracks(&self) -> Result<Vec<(i64, String, String, String, String, f64, i64, i64, String, String, i64, i64, Option<i64>)>, Box<dyn Error>> {
         let conn = self.imp().conn.borrow();
         let conn = conn.as_ref().ok_or("Connection not established")?;
-        let mut stmt = conn.prepare("SELECT * FROM tracks;")?;
+        let mut stmt = conn.prepare(
+            "SELECT t.id, t.title, t.filetype, t.album_name, t.date,
+                    t.duration, t.track_number, t.disc_number, t.album_artist,
+                    (SELECT uri FROM File_URIs WHERE id = t.file_uri_id) AS uri,
+                    (SELECT artist_id
+                     FROM Track_Artist_Junction
+                     WHERE track_id = t.id
+                     LIMIT 1) AS artist_id,
+                    (SELECT album_id
+                     FROM Track_Album_Junction
+                     WHERE track_id = t.id
+                     LIMIT 1) AS album_id,
+                    (SELECT cover_art_id
+                     FROM Track_Cover_Art_Junction
+                     WHERE track_id = t.id
+                     LIMIT 1) AS cover_art_id
+             FROM Tracks t
+             ORDER BY t.id;"
+        )?;
+
         let rows = stmt.query_map([], |row| {
-            let id: i64 = row.get(0)?;
-            let title: String = row.get(1)?;
-            let filetype: String = row.get(2)?;
-            let album_name: String = row.get(3)?;
-            let date: String = row.get(4)?;
-            let duration: f64 = row.get(5)?;
-            let track_number: i64 = row.get(6)?;
-            let disc_number: i64 = row.get(7)?;
-            let album_artist: String = row.get(8)?;
-            let file_uri_id: i64 = row.get(9)?;
-            Ok((id, title, filetype, album_name, date, duration, track_number, disc_number, album_artist, file_uri_id))
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+                row.get(8)?,
+                row.get(9)?,
+                row.get(10)?,
+                row.get(11)?,
+                row.get(12)?,
+            ))
         })?;
 
         let mut result = Vec::new();
         for row in rows {
-            let (track_id, title, filetype, album_name, date, duration, track_number, disc_number, album_artist, file_uri_id) = row?;
-
-            let mut stmt = conn.prepare("SELECT album_id FROM Track_Album_Junction WHERE track_id = ?;")?;
-            let album_id: i64 = stmt.query_row([track_id], |row| row.get(0))?;
-            
-            let mut stmt = conn.prepare("SELECT artist_id FROM Track_Artist_Junction WHERE track_id = ?;")?;
-            let artist_id: i64 = stmt.query_row([track_id], |row| row.get(0))?;
-
-            let mut stmt = conn.prepare("SELECT cover_art_id FROM Track_Cover_Art_Junction WHERE track_id = ?;")?;
-            let cover_art_id: Option<i64> = stmt.query_row([track_id], |row| row.get(0)).optional()?;
-
-            let mut stmt = conn.prepare("SELECT uri FROM File_URIs WHERE id = ?")?;
-            let uri: String = stmt.query_row([file_uri_id], |row| row.get(0))?;
-
-            result.push((track_id, title, filetype, album_name, date, duration, track_number, disc_number, album_artist, uri, artist_id, album_id, cover_art_id));
+            result.push(row?);
         }
-
         Ok(result)
     }
 
-    //Used in naming a new playlist
+        //Used in naming a new playlist
     pub fn query_n_playlists(&self, playlist_id: Option<i64>) -> Result<i64, Box<dyn Error>> {
         let conn = self.imp().conn.borrow();
         let conn = conn.as_ref().ok_or("Connection not established")?;
@@ -2199,6 +2229,28 @@ impl Database {
             FOREIGN KEY (artist_id) REFERENCES Artists(id),
             FOREIGN KEY (image_id) REFERENCES Discog_Artist_Image(id)
         );", params![]).unwrap();
+
+        // Junction-table indexes are important for the relationship lookups used
+        // throughout the library model. SQLite does not automatically index
+        // foreign-key columns.
+        connection.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_album_genre_junction_genre
+                 ON Album_Genre_Junction(genre_id);
+             CREATE INDEX IF NOT EXISTS idx_album_artist_junction_artist
+                 ON Album_Artist_Junction(artist_id);
+             CREATE INDEX IF NOT EXISTS idx_album_artist_junction_album
+                 ON Album_Artist_Junction(album_id);
+             CREATE INDEX IF NOT EXISTS idx_album_cover_art_junction_album
+                 ON Album_Cover_Art_Junction(album_id);
+             CREATE INDEX IF NOT EXISTS idx_artist_discog_image_junction_artist
+                 ON Artist_Discog_Artist_Image_Junction(artist_id);
+             CREATE INDEX IF NOT EXISTS idx_track_album_junction_track
+                 ON Track_Album_Junction(track_id);
+             CREATE INDEX IF NOT EXISTS idx_track_artist_junction_track
+                 ON Track_Artist_Junction(track_id);
+             CREATE INDEX IF NOT EXISTS idx_track_cover_art_junction_track
+                 ON Track_Cover_Art_Junction(track_id);"
+        )?;
 
         Ok(())
     }
