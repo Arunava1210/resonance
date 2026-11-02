@@ -13,7 +13,12 @@ use log::{debug, error};
 use rusqlite::Transaction;
 use pyo3::prelude::*;
 use chrono::{DateTime, Utc};
+use once_cell::sync::Lazy;
 use regex::Regex;
+
+static TRACK_NUMBER_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^[^\d]*(\d+)").expect("valid track/disc number regex")
+});
 
 use super::database::DatabaseAction;
 use super::util;
@@ -161,10 +166,11 @@ impl Importer {
         let mut added_art: HashMap<&[u8], i64> = HashMap::new();
         let mut album_art: HashMap<i64, Vec<i64>> = HashMap::new();
 
-        let mut orphan_tracks = 0;
+        // Count existing unknown-album tracks once; use an in-memory counter as
+        // new tracks are inserted instead of running COUNT(*) for every orphan.
+        let existing_orphan_tracks = database.query_orphan_tracks(&tx)? as u32;
+        let mut added_orphan_tracks = 0u32;
         let current_folder_id = database.add_folder(&tx, folder_uri)?;
-
-        let re = Regex::new(r"^[^\d]*(\d+)").unwrap();
 
         for (uri, track_map) in &tags {
             debug!("getting tags from:\n\t -> {:?}", uri);
@@ -181,9 +187,7 @@ impl Importer {
             let mut track_number_tag = None;
             let mut filetype_tag = String::new();
 
-            if cover_art_map.contains_key(&uri.clone()) {
-                cover_art = cover_art_map.get(&uri.clone());
-            }
+            cover_art = cover_art_map.get(uri);
             
             for (type_key, type_map) in track_map {
 
@@ -213,8 +217,8 @@ impl Importer {
                                         date_tag = value[0].clone();
                                     },
                                     "tracknumber" => {
-                                        let tag = re.captures(&value[0]).and_then(|cap| {
-                                            cap.get(0).map(|s| s.as_str())
+                                        let tag = TRACK_NUMBER_REGEX.captures(&value[0]).and_then(|cap| {
+                                            cap.get(1).map(|s| s.as_str())
                                         });
                                         track_number_tag = if !tag.is_none() {
                                             match tag.unwrap().parse::<u32>() {
@@ -229,8 +233,8 @@ impl Importer {
                                         };
                                     },
                                     "discnumber" => {
-                                        let tag = re.captures(&value[0]).and_then(|cap| {
-                                            cap.get(0).map(|s| s.as_str())
+                                        let tag = TRACK_NUMBER_REGEX.captures(&value[0]).and_then(|cap| {
+                                            cap.get(1).map(|s| s.as_str())
                                         });
                                         disc_number_tag = if !tag.is_none() {
                                             match tag.unwrap().parse::<u32>() {
@@ -272,8 +276,8 @@ impl Importer {
                                         filetype_tag = value.clone();
                                     },
                                     "tracknumber" => {
-                                        let tag = re.captures(&value).and_then(|cap| {
-                                            cap.get(0).map(|s| s.as_str())
+                                        let tag = TRACK_NUMBER_REGEX.captures(&value).and_then(|cap| {
+                                            cap.get(1).map(|s| s.as_str())
                                         });
                                         debug!("{:?}", tag);
                                         track_number_tag = if !tag.is_none() {
@@ -290,8 +294,8 @@ impl Importer {
                                         };
                                     },
                                     "discnumber" => {
-                                        let tag = re.captures(&value).and_then(|cap| {
-                                            cap.get(0).map(|s| s.as_str())
+                                        let tag = TRACK_NUMBER_REGEX.captures(&value).and_then(|cap| {
+                                            cap.get(1).map(|s| s.as_str())
                                         });
                                         disc_number_tag = if !tag.is_none() {
                                             match tag.unwrap().parse::<u32>() {
@@ -327,6 +331,7 @@ impl Importer {
             }
 
             let album_key = format!("{}{}", album_tag, albumartist_tag);
+            let is_orphan_album = album_key == "Unknown AlbumUnknown Artist";
             let song_key = format!("{}{}{}{}", title_tag, album_tag, albumartist_tag, uri);
 
             if added_tracks.contains_key(&song_key) {
@@ -342,10 +347,8 @@ impl Importer {
             let tracknumber = match track_number_tag {
                 Some(number) => number,
                 None => {
-                    if album_key == "Unknown AlbumUnknown Artist" {
-                        orphan_tracks += 1;
-                        let in_db = database.query_orphan_tracks(&tx)? as u32;
-                        orphan_tracks+in_db
+                    if is_orphan_album {
+                        existing_orphan_tracks + added_orphan_tracks + 1
                     } else {
                         error!("No track number for {}", song_key);
                         1
@@ -418,8 +421,8 @@ impl Importer {
 
             
 
-            let metadata = fs::metadata(uri.to_string()).unwrap();
-            let modification_time = metadata.modified().unwrap();
+            let metadata = fs::metadata(uri)?;
+            let modification_time = metadata.modified()?;
             let modification_time_dt = DateTime::<Utc>::from(modification_time);
 
             // if let Some(w) = window {
@@ -476,6 +479,9 @@ impl Importer {
 
             added_albums.insert(album_key, album_id);
             added_tracks.insert(song_key, track_id);
+            if is_orphan_album {
+                added_orphan_tracks += 1;
+            }
 
         }
 
