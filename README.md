@@ -5,7 +5,7 @@ Resonance
 
 Harmonize your listening experience with Resonance. 
 
-Resonance is an intuitive music player application written in Rust & Python, with a clean user interface built using GTK4 / Libadwaita. 
+Resonance is an intuitive music player application written in Rust, with a clean user interface built using GTK4 / Libadwaita. 
 Resonance lets you effortlessly manage and play your music collection, with support for all the common music file formats such as MP3, FLAC, AAC, and many more.
 
 ⚠️ RESONANCE IS EARLY STAGE ALPHA RELEASE SOFTWARE (THERE ARE BUGS, PLEASE OPEN ISSUES) ⚠️
@@ -21,7 +21,7 @@ Features:
  - Control the player through [MPRIS](https://specifications.freedesktop.org/mpris-spec/latest/)
  - Discord Rich Presence integration
  - Last.fm scrobbling
- - Import tags with the [Mutagen library](https://github.com/quodlibet/mutagen)
+ - Native Rust metadata scanning with parallel import and embedded artwork extraction
  - No tag editing (intentionally out of scope to keep Resonance a music player only)
 
 <br><br>
@@ -41,12 +41,12 @@ by using this command:
 Building from source
 ----------------------
 
-To build from source you need the gstreamer, gtk4 and libadwaita development headers. Additionally you'll need meson, ninja and git. You'll also need those python runtime libraries: mutagen, tqdm and loguru.
+To build from source you need the GStreamer, GTK4 and Libadwaita development headers. Additionally you'll need Meson, Ninja, Git and Rust 1.85 or newer. The default build uses the native Rust metadata importer and does not require Python.
 
 On a recent enough Ubuntu or Debian unstable you can do the following:
 
 ```
-sudo apt install build-essential rustc meson ninja-build git python3-loguru python3-mutagen python3-tqdm libgtk-4-dev libadwaita-1-dev \
+sudo apt install build-essential rustc meson ninja-build git libgtk-4-dev libadwaita-1-dev \
 libgstreamer-plugins-bad1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer1.0-dev
 git clone https://github.com/nate-xyz/resonance && cd resonance
 ninja -C build && sudo ninja -C build install
