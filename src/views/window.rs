@@ -1452,7 +1452,10 @@ impl Window {
         self.add_simple_action("remove-track-from-queue", Some(glib::VariantTy::UINT64), 
             move |_, position| {
                 if let Some(position_to_remove) = position.and_then(|u| u.get::<u64>()) {
-                    player().queue().remove_track(position_to_remove as usize);
+                    let player = player();
+                    if player.queue().remove_track(position_to_remove as usize) {
+                        player.play();
+                    }
                 }
             }
         );

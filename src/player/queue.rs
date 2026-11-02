@@ -304,7 +304,6 @@ impl Queue {
 
                 self.queue.replace(restored);
                 self.current_position.set(current_position as u64);
-                self.current_song_update();
             }
             _ => (),
         }
@@ -321,6 +320,9 @@ impl Queue {
 
         if mode == RepeatMode::Shuffle || previous_mode == RepeatMode::Shuffle {
             send!(self.sender, QueueAction::QueueUpdate);
+        }
+        if previous_mode == RepeatMode::Shuffle && mode != RepeatMode::Shuffle {
+            self.current_song_update();
         }
         send!(self.sender, QueueAction::QueueRepeatMode(mode));
     }

@@ -146,7 +146,10 @@ impl QueueTrack {
 
         imp.delete_button.connect_clicked(
             clone!(@strong self as this => move |_button| {
-                player().queue().remove_track(this.playlist_position() as usize);
+                let player = player();
+                if player.queue().remove_track(this.playlist_position() as usize) {
+                    player.play();
+                }
             })
         );
 
