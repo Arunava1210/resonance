@@ -93,6 +93,10 @@ impl Artist {
         self.imp().sort_name.borrow().to_string()
     }
 
+    pub fn sort_name_ref(&self) -> std::cell::Ref<'_, str> {
+        std::cell::Ref::map(self.imp().sort_name.borrow(), |value| value.as_str())
+    }
+
     pub fn image_id(&self) -> Option<i64> {
         self.imp().image_id.get().clone()
     }

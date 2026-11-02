@@ -75,6 +75,10 @@ impl Genre {
         self.imp().sort_name.borrow().to_string()
     }
 
+    pub fn sort_name_ref(&self) -> std::cell::Ref<'_, str> {
+        std::cell::Ref::map(self.imp().sort_name.borrow(), |value| value.as_str())
+    }
+
     pub fn add_album(&self, album: Rc<Album>) {
         let imp = self.imp();
 

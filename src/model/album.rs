@@ -135,6 +135,10 @@ impl Album {
         self.imp().sort_title.borrow().clone()
     }
 
+    pub fn sort_title_ref(&self) -> std::cell::Ref<'_, str> {
+        std::cell::Ref::map(self.imp().sort_title.borrow(), |value| value.as_str())
+    }
+
     pub fn artist(&self) -> String {
         self.imp().album_artist.borrow().clone()
     }
@@ -143,12 +147,24 @@ impl Album {
         self.imp().sort_artist.borrow().clone()
     }
 
+    pub fn sort_artist_ref(&self) -> std::cell::Ref<'_, str> {
+        std::cell::Ref::map(self.imp().sort_artist.borrow(), |value| value.as_str())
+    }
+
     pub fn date(&self) -> String {
         self.imp().date.borrow().clone()
     }
 
+    pub fn date_ref(&self) -> std::cell::Ref<'_, str> {
+        std::cell::Ref::map(self.imp().date.borrow(), |value| value.as_str())
+    }
+
     pub fn genre(&self) -> String {
         self.imp().genre.borrow().clone()
+    }
+
+    pub fn genre_ref(&self) -> std::cell::Ref<'_, str> {
+        std::cell::Ref::map(self.imp().genre.borrow(), |value| value.as_str())
     }
 
     pub fn duration(&self) -> f64 {
@@ -161,6 +177,10 @@ impl Album {
 
     pub fn sort_string(&self) -> String {
         self.imp().sort_string.borrow().clone()
+    }
+
+    pub fn sort_string_ref(&self) -> std::cell::Ref<'_, str> {
+        std::cell::Ref::map(self.imp().sort_string.borrow(), |value| value.as_str())
     }
 
     pub fn tracks(&self) -> Vec<Rc<Track>> {

@@ -79,6 +79,10 @@ impl Playlist {
         self.imp().title.borrow().clone()
     }
 
+    pub fn title_ref(&self) -> std::cell::Ref<'_, str> {
+        std::cell::Ref::map(self.imp().title.borrow(), |value| value.as_str())
+    }
+
     pub fn description(&self) -> String {
         self.imp().description.borrow().clone()
     }

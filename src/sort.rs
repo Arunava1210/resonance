@@ -222,11 +222,11 @@ mod imp {
                             let item2 = item2.downcast_ref::<Album>().unwrap();
         
                             match self.method.get() {
-                                SortMethod::Album => (item1.sort_title(), item2.sort_title()),
-                                SortMethod::Artist => (item1.sort_artist(), item2.sort_artist()),
-                                SortMethod::Genre => (item1.genre(), item2.genre()),
-                                SortMethod::ReleaseDate => (item1.date(), item2.date()),
-                                _ => (item1.sort_string(), item2.sort_string()),
+                                SortMethod::Album => (item1.sort_title_ref(), item2.sort_title_ref()),
+                                SortMethod::Artist => (item1.sort_artist_ref(), item2.sort_artist_ref()),
+                                SortMethod::Genre => (item1.genre_ref(), item2.genre_ref()),
+                                SortMethod::ReleaseDate => (item1.date_ref(), item2.date_ref()),
+                                _ => (item1.sort_string_ref(), item2.sort_string_ref()),
                             }
                         },
                         SearchSortObject::Track => {
@@ -234,31 +234,31 @@ mod imp {
                             let item2 = item2.downcast_ref::<Track>().unwrap();
         
                             match self.method.get() {
-                                SortMethod::Track => (item1.sort_title(), item2.sort_title()),
-                                SortMethod::Album => (item1.sort_album(), item2.sort_album()),
-                                SortMethod::Artist => (item1.sort_artist(), item2.sort_artist()),
-                                SortMethod::Genre => (item1.genre(), item2.genre()),
-                                SortMethod::ReleaseDate => (item1.date(), item2.date()),
-                                _ => (item1.sort_string(), item2.sort_string()),
+                                SortMethod::Track => (item1.sort_title_ref(), item2.sort_title_ref()),
+                                SortMethod::Album => (item1.sort_album_ref(), item2.sort_album_ref()),
+                                SortMethod::Artist => (item1.sort_artist_ref(), item2.sort_artist_ref()),
+                                SortMethod::Genre => (item1.genre_ref(), item2.genre_ref()),
+                                SortMethod::ReleaseDate => (item1.date_ref(), item2.date_ref()),
+                                _ => (item1.sort_string_ref(), item2.sort_string_ref()),
                             }
                         },
                         SearchSortObject::Playlist => {
                             let item1 = item1.downcast_ref::<Playlist>().unwrap();
                             let item2 = item2.downcast_ref::<Playlist>().unwrap();
         
-                            (item1.title(), item2.title())
+                            (item1.title_ref(), item2.title_ref())
                         },
                         SearchSortObject::Artist => {
                             let item1 = item1.downcast_ref::<Artist>().unwrap();
                             let item2 = item2.downcast_ref::<Artist>().unwrap();
         
-                            (item1.sort_name(), item2.sort_name())
+                            (item1.sort_name_ref(), item2.sort_name_ref())
                         },
                         SearchSortObject::Genre => {
                             let item1 = item1.downcast_ref::<Genre>().unwrap();
                             let item2 = item2.downcast_ref::<Genre>().unwrap();
         
-                            (item1.sort_name(), item2.sort_name())
+                            (item1.sort_name_ref(), item2.sort_name_ref())
                         },
                         _ => unimplemented!("no sorting for")
         
@@ -274,8 +274,8 @@ mod imp {
 
                     if let Some(search) = self.search.borrow().as_ref() {
                         if !search.is_empty() {
-                            let item1_score = self.matcher.fuzzy_match(&item1_key, search);
-                            let item2_score = self.matcher.fuzzy_match(&item2_key, search);
+                            let item1_score = self.matcher.fuzzy_match(&*item1_key, search);
+                            let item2_score = self.matcher.fuzzy_match(&*item2_key, search);
                             let order = item1_score.cmp(&item2_score).reverse();
         
                             if order != std::cmp::Ordering::Equal {
@@ -284,9 +284,9 @@ mod imp {
                         }
                     } 
         
-                    if item1_key > item2_key {
+                    if &*item1_key > &*item2_key {
                         gtk::Ordering::Larger
-                    } else if item1_key < item2_key  {
+                    } else if &*item1_key < &*item2_key  {
                         gtk::Ordering::Smaller
                     } else {
                         gtk::Ordering::Equal

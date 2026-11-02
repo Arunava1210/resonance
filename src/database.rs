@@ -198,7 +198,7 @@ impl Database {
             },
             DatabaseAction::ImportFailed(message) => {
                 error!("Unable to construct database from tags: {}", message);
-                self.imp().import_start_time.take();
+                let _ = self.imp().import_start_time.take();
                 add_error_toast(i18n("Unable to add music folder."));
                 if let Some(window) = util::window() {
                     window.set_import_message("Import failed.");
@@ -224,7 +224,7 @@ impl Database {
                     Ok(_) => debug!("Started importing music folder: {:?}", folder),
                     Err(e) => {
                         error!("{}", e);
-                        self.imp().import_start_time.take();
+                        let _ = self.imp().import_start_time.take();
                         add_error_toast(i18n("Unable to add music folder."));
                     },
                 }
@@ -558,7 +558,7 @@ impl Database {
     //Extract tags from music folder with mutagen
     pub fn try_add_music_folder(&self, path: PathBuf) -> Result<(), Box<dyn Error>> {
         let imp = self.imp();
-        let path_str = path.into_os_string().into_string().ok().unwrap();
+        let path_str = path.to_string_lossy().into_owned();
         imp.import_start_time.replace(Some(chrono::offset::Utc::now()));
         self.importer().extract_folder(path_str, imp.db_sender.clone());
         Ok(())
