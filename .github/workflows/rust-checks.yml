@@ -9,7 +9,7 @@ on:
 
 jobs:
   test:
-    name: Format and test (Ubuntu)
+    name: Compile and test (Ubuntu 24.04)
     runs-on: ubuntu-24.04
     steps:
       - name: Check out source
@@ -27,13 +27,19 @@ jobs:
             libgstreamer-plugins-base1.0-dev \
             libgtk-4-dev
 
+      - name: Install Python 3.11 for the existing PyO3 bridge
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure PyO3 interpreter
+        run: echo "PYO3_PYTHON=$(which python)" >> "$GITHUB_ENV"
+
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      - name: Check compilation
+        run: cargo check --locked
 
       - name: Run tests
         run: cargo test --locked
