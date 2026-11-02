@@ -432,7 +432,7 @@ impl Database {
     }
 
     fn check_loaded(&self, tx: &Transaction) -> Result<(), Box<dyn Error>> {
-        let mut stmt = tx.prepare("SELECT EXISTS(SELECT 1 FROM Music_Folders LIMIT 1);")?;
+        let mut stmt = tx.prepare_cached("SELECT EXISTS(SELECT 1 FROM Music_Folders LIMIT 1);")?;
         let exists: i32 = stmt.query_row([], |row| row.get(0))?;
         
         if exists == 0 {
@@ -629,7 +629,7 @@ impl Database {
     }
 
     fn new_artists(&self, tx: &Transaction) -> Result<Vec<(i64, String)>, Box<dyn Error>> {
-        let mut stmt = tx.prepare("SELECT * FROM Artists WHERE Artists.image_fetched=0 AND NOT EXISTS(SELECT 1 FROM Artist_Discog_Artist_Image_Junction WHERE Artists.id = Artist_Discog_Artist_Image_Junction.artist_id);")?;
+        let mut stmt = tx.prepare_cached("SELECT * FROM Artists WHERE Artists.image_fetched=0 AND NOT EXISTS(SELECT 1 FROM Artist_Discog_Artist_Image_Junction WHERE Artists.id = Artist_Discog_Artist_Image_Junction.artist_id);")?;
         let rows = stmt.query_map([], |row| {
             let id: i64 = row.get(0)?;
             let name: String = row.get(1)?;
@@ -650,25 +650,25 @@ impl Database {
     */
 
     pub fn add_folder(&self, tx: &Transaction, uri: String) -> Result<i64, Box<dyn Error>> {
-        let mut stmt = tx.prepare("INSERT INTO Music_Folders (uri) VALUES ( ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO Music_Folders (uri) VALUES ( ? );")?;
         stmt.execute(params![uri])?;
         Ok(tx.last_insert_rowid())
     }
 
     pub fn add_genre(&self, tx: &Transaction, name: String) -> Result<i64, Box<dyn Error>> {
-        let mut stmt = tx.prepare("INSERT INTO Genres (name) VALUES ( ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO Genres (name) VALUES ( ? );")?;
         stmt.execute(params![name])?;
         Ok(tx.last_insert_rowid())
     }
 
     pub fn add_artist(&self, tx: &Transaction, name: String) -> Result<i64, Box<dyn Error>> {
-        let mut stmt = tx.prepare("INSERT INTO Artists ( name, image_fetched ) VALUES ( ?, ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO Artists ( name, image_fetched ) VALUES ( ?, ? );")?;
         stmt.execute(params![name, 0])?;
         Ok(tx.last_insert_rowid())
     }
 
     pub fn add_cover_art(&self, tx: &Transaction, data: &[u8]) -> Result<i64, Box<dyn Error>> {
-        let mut stmt = tx.prepare("INSERT INTO Cover_Art (data, thing) VALUES ( ?, ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO Cover_Art (data, thing) VALUES ( ?, ? );")?;
         stmt.execute(params![data, 0])?;
         Ok(tx.last_insert_rowid())
     }
@@ -694,7 +694,7 @@ impl Database {
 
     fn add_album(&self, tx: &Transaction, 
         title: String, artist: String, date: String, genre: String) -> Result<i64, Box<dyn Error>> {
-        let mut stmt = tx.prepare("INSERT INTO Albums (title, artist, date, genre) VALUES ( ?, ?, ?, ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO Albums (title, artist, date, genre) VALUES ( ?, ?, ?, ? );")?;
         stmt.execute(params![
             title, artist, date, genre
         ])?;
@@ -703,21 +703,21 @@ impl Database {
 
     fn add_album_artist_junction(&self, tx: &Transaction, 
         album_id: i64, artist_id: i64) -> Result<i64, Box<dyn Error>> {
-        let mut stmt = tx.prepare("INSERT INTO Album_Artist_Junction (album_id, artist_id) VALUES ( ?, ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO Album_Artist_Junction (album_id, artist_id) VALUES ( ?, ? );")?;
         stmt.execute(params![album_id, artist_id])?;
         Ok(tx.last_insert_rowid())
     }
 
     fn add_album_cover_art_junction(&self, tx: &Transaction, 
         album_id: i64, cover_art_id: i64) -> Result<i64, Box<dyn Error>> {
-        let mut stmt = tx.prepare("INSERT INTO Album_Cover_Art_Junction (album_id, cover_art_id) VALUES ( ?, ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO Album_Cover_Art_Junction (album_id, cover_art_id) VALUES ( ?, ? );")?;
         stmt.execute(params![album_id, cover_art_id])?;
         Ok(tx.last_insert_rowid())
     }
 
     fn add_album_genre_junction(&self, tx: &Transaction, 
         album_id: i64, genre_id: i64) -> Result<i64, Box<dyn Error>> {
-        let mut stmt = tx.prepare("INSERT INTO Album_Genre_Junction (album_id, genre_id) VALUES ( ?, ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO Album_Genre_Junction (album_id, genre_id) VALUES ( ?, ? );")?;
         stmt.execute(params![
             album_id, genre_id
         ])?;
@@ -748,11 +748,11 @@ impl Database {
     }
 
     fn add_file_uri(&self, tx: &Transaction, file_uri: String, last_modified: DateTime<Utc>, folder_id: i64) -> Result<i64, Box<dyn Error>> {
-        let mut stmt = tx.prepare("INSERT INTO File_URIs (uri, last_modified) VALUES ( ?, ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO File_URIs (uri, last_modified) VALUES ( ?, ? );")?;
         stmt.execute(params![file_uri, last_modified.timestamp()])?;
         let file_id = tx.last_insert_rowid();
 
-        let mut stmt = tx.prepare("INSERT INTO Folder_File_Junction (folder_id, file_id) VALUES ( ?, ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO Folder_File_Junction (folder_id, file_id) VALUES ( ?, ? );")?;
         stmt.execute(params![folder_id, file_id])?;
 
         Ok(file_id)
@@ -761,35 +761,35 @@ impl Database {
     fn add_track(&self, tx: &Transaction, 
         title: String, filetype: String, album_name: String, date: String, duration: f32, 
         track_number: u32, disc_number: u32,  album_artist: String,  file_uri_id: i64) -> Result<i64, Box<dyn Error>> {
-        let mut stmt = tx.prepare("INSERT INTO Tracks (title, filetype, album_name, date, duration, track_number, disc_number, album_artist, file_uri_id) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO Tracks (title, filetype, album_name, date, duration, track_number, disc_number, album_artist, file_uri_id) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ? );")?;
         stmt.execute(params![title, filetype, album_name, date, duration, track_number, disc_number, album_artist, file_uri_id])?;
         Ok(tx.last_insert_rowid())
     }
 
     fn add_track_folder_junction(&self, tx: &Transaction, 
         track_id: i64, folder_id: i64) -> Result<i64, Box<dyn Error>> {
-        let mut stmt = tx.prepare("INSERT INTO Track_Folder_Junction (track_id, folder_id) VALUES ( ?, ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO Track_Folder_Junction (track_id, folder_id) VALUES ( ?, ? );")?;
         stmt.execute(params![track_id, folder_id])?;
         Ok(tx.last_insert_rowid())
     }
 
     fn add_track_album_junction(&self, tx: &Transaction, 
         track_id: i64, album_id: i64) -> Result<i64, Box<dyn Error>> {
-        let mut stmt = tx.prepare("INSERT INTO Track_Album_Junction (track_id, album_id) VALUES ( ?, ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO Track_Album_Junction (track_id, album_id) VALUES ( ?, ? );")?;
         stmt.execute(params![track_id, album_id])?;
         Ok(tx.last_insert_rowid())
     }
 
     fn add_track_artist_junction(&self, tx: &Transaction, 
         track_id: i64, artist_id: i64) -> Result<i64, Box<dyn Error>> {
-        let mut stmt = tx.prepare("INSERT INTO Track_Artist_Junction (track_id, artist_id) VALUES ( ?, ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO Track_Artist_Junction (track_id, artist_id) VALUES ( ?, ? );")?;
         stmt.execute(params![track_id, artist_id])?;
         Ok(tx.last_insert_rowid())
     }
 
     fn add_track_cover_art_junction(&self, tx: &Transaction, 
         track_id: i64, cover_art_id: i64) -> Result<i64, Box<dyn Error>> {
-        let mut stmt = tx.prepare("INSERT INTO Track_Cover_Art_Junction (track_id, cover_art_id) VALUES ( ?, ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO Track_Cover_Art_Junction (track_id, cover_art_id) VALUES ( ?, ? );")?;
         stmt.execute(params![track_id, cover_art_id])?;
         Ok(tx.last_insert_rowid())
     }
@@ -815,7 +815,7 @@ impl Database {
 
     fn add_playlist(&self, tx: &Transaction, title: String, description: String) -> Result<i64, Box<dyn Error>> {
         debug!("create_playlist");
-        let mut stmt = tx.prepare("INSERT INTO PLAYLISTS (title, description, creation_time, modify_time) VALUES ( ?, ?, ?, ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO PLAYLISTS (title, description, creation_time, modify_time) VALUES ( ?, ?, ?, ? );")?;
         let creation_time = chrono::offset::Utc::now();
         let modify_time = chrono::offset::Utc::now();
         stmt.execute(params![
@@ -828,15 +828,15 @@ impl Database {
     }
 
     fn add_track_to_playlist(&self, tx: &Transaction, playlist_id: i64, playlist_position: i64, track_id: i64) -> Result<(), Box<dyn Error>> {
-        let mut stmt = tx.prepare("INSERT INTO Playlist_Entries (playlist_position) VALUES ( ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO Playlist_Entries (playlist_position) VALUES ( ? );")?;
         stmt.execute(params![playlist_position])?;
         
         let playlist_entry_id = tx.last_insert_rowid();
 
-        let mut stmt = tx.prepare("INSERT INTO Playlist_Entry_Track_Junction (playlist_entry_id, track_id) VALUES ( ?, ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO Playlist_Entry_Track_Junction (playlist_entry_id, track_id) VALUES ( ?, ? );")?;
         stmt.execute(params![playlist_entry_id, track_id])?;
 
-        let mut stmt = tx.prepare("INSERT INTO Playlist_Entry_Playlist_Junction (playlist_entry_id, playlist_id) VALUES ( ?, ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO Playlist_Entry_Playlist_Junction (playlist_entry_id, playlist_id) VALUES ( ?, ? );")?;
         stmt.execute(params![playlist_entry_id, playlist_id])?;
 
         Ok(())
@@ -855,7 +855,7 @@ impl Database {
         }
 
         let statements = |tx: &Transaction| -> Result<(), Box<dyn Error>> {
-            let mut stmt = tx.prepare("SELECT count( * ) FROM Playlist_Entry_Playlist_Junction WHERE playlist_id = ( ? );")?;
+            let mut stmt = tx.prepare_cached("SELECT count( * ) FROM Playlist_Entry_Playlist_Junction WHERE playlist_id = ( ? );")?;
             let number_of_playlist_members: i64 = stmt.query_row([playlist_id], |row| row.get(0))?;
     
             for (i, track_id) in tracks.iter().enumerate() {
@@ -907,11 +907,11 @@ impl Database {
         //SET FETCHED 
         let statements = |tx: &Transaction| -> Result<(), Box<dyn Error>> {
             let mut stmt = if fetched {
-                tx.prepare("UPDATE Artists SET image_fetched = 1 WHERE id = ( ? );")?
+                tx.prepare_cached("UPDATE Artists SET image_fetched = 1 WHERE id = ( ? );")?
             } else {
-                tx.prepare("UPDATE Artists SET image_fetched = 0 WHERE id = ( ? );")?
+                tx.prepare_cached("UPDATE Artists SET image_fetched = 0 WHERE id = ( ? );")?
             };
-            // let mut stmt = tx.prepare("UPDATE Artists SET image_fetched = 1 WHERE id = ( ? );")?;
+            // let mut stmt = tx.prepare_cached("UPDATE Artists SET image_fetched = 1 WHERE id = ( ? );")?;
             stmt.execute(params![artist_id])?;
             Ok(())
         };
@@ -921,14 +921,14 @@ impl Database {
     }
     
     fn add_artist_image(&self, tx: &Transaction, url: String, data: &[u8]) -> Result<i64, Box<dyn Error>> {
-        let mut stmt = tx.prepare("INSERT INTO Discog_Artist_Image (url, data, thing) VALUES ( ?, ?, ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO Discog_Artist_Image (url, data, thing) VALUES ( ?, ?, ? );")?;
         stmt.execute(params![url, data, 0])?;
         Ok(tx.last_insert_rowid())
     }
 
     fn add_artist_discog_image_junction(&self, tx: &Transaction, 
         artist_id: i64, image_id: i64) -> Result<i64, Box<dyn Error>> {
-        let mut stmt = tx.prepare("INSERT INTO Artist_Discog_Artist_Image_Junction (artist_id, image_id) VALUES ( ?, ? );")?;
+        let mut stmt = tx.prepare_cached("INSERT INTO Artist_Discog_Artist_Image_Junction (artist_id, image_id) VALUES ( ?, ? );")?;
         stmt.execute(params![artist_id, image_id])?;
         Ok(tx.last_insert_rowid())
     }
@@ -943,7 +943,7 @@ impl Database {
         
     //     //SET FETCHED 
     //     let statements = |tx: &Transaction| -> Result<(), Box<dyn Error>> {
-    //         let mut stmt = tx.prepare("UPDATE Artists SET image_fetched = 1 WHERE id = ( ? );")?;
+    //         let mut stmt = tx.prepare_cached("UPDATE Artists SET image_fetched = 1 WHERE id = ( ? );")?;
     //         stmt.execute(params![artist_id])?;
     //         Ok(())
     //     };
@@ -994,7 +994,7 @@ impl Database {
     }
 
     fn check_if_folder_exists(&self, tx: &Transaction, music_folder: String) -> Result<bool, Box<dyn Error>>{
-        let mut stmt = tx.prepare("SELECT EXISTS(SELECT 1 FROM Music_Folders WHERE uri = (?)  LIMIT 1);")?;
+        let mut stmt = tx.prepare_cached("SELECT EXISTS(SELECT 1 FROM Music_Folders WHERE uri = (?)  LIMIT 1);")?;
         let exists: bool = match stmt.query_row([music_folder], |row| row.get::<usize, i64>(0)) {
             Ok(count) => {
                 count > 0
@@ -1006,7 +1006,7 @@ impl Database {
     }
 
     fn check_if_playlist_exists(&self, tx: &Transaction, playlist_id: i64) -> Result<bool, Box<dyn Error>>{
-        let mut stmt = tx.prepare("SELECT EXISTS(SELECT 1 FROM Playlists WHERE id = (?)  LIMIT 1);")?;
+        let mut stmt = tx.prepare_cached("SELECT EXISTS(SELECT 1 FROM Playlists WHERE id = (?)  LIMIT 1);")?;
         let exists: bool = match stmt.query_row([playlist_id], |row| row.get::<usize, i64>(0)) {
             Ok(count) => {
                 count > 0
@@ -1019,7 +1019,7 @@ impl Database {
 
     // Used in the import process if a track has no track number & no album artist tags, to add to the Unknown Album
     pub fn query_orphan_tracks(&self, tx: &Transaction) -> Result<i64, Box<dyn Error>> {
-        let mut stmt = tx.prepare("SELECT count( * ) FROM tracks WHERE album_name = \"Unknown Album\" AND album_artist = \"Unknown Artist\";")?;
+        let mut stmt = tx.prepare_cached("SELECT count( * ) FROM tracks WHERE album_name = \"Unknown Album\" AND album_artist = \"Unknown Artist\";")?;
         let count = stmt.query_row([], |row| row.get(0))?;
         Ok(count)
     }
@@ -1460,12 +1460,12 @@ impl Database {
     // ######
 
     pub fn update_album_art(&self, tx: &Transaction, album_id: i64, album_art: i64,) -> Result<(), Box<dyn Error>> {
-        let mut stmt = tx.prepare("SELECT cover_art_id FROM Album_Cover_Art_Junction WHERE album_id = (?);")?;
+        let mut stmt = tx.prepare_cached("SELECT cover_art_id FROM Album_Cover_Art_Junction WHERE album_id = (?);")?;
         let cover_art_id: Option<i64> = stmt.query_row([album_id], |row| row.get(0)).optional()?;
 
         if let Some(id) = cover_art_id {
             if id != album_art {
-                let mut stmt = tx.prepare("UPDATE Album_Cover_Art_Junction SET cover_art_id = (?) WHERE album_id = (?);")?;
+                let mut stmt = tx.prepare_cached("UPDATE Album_Cover_Art_Junction SET cover_art_id = (?) WHERE album_id = (?);")?;
                 stmt.execute(params![album_art, album_id])?;
             }
         } else {
@@ -1508,19 +1508,19 @@ impl Database {
     }
 
     fn modify_playlist_title(&self, tx: &Transaction, playlist_id: i64, new_title: String) -> Result<(), Box<dyn Error>> {
-        let mut stmt = tx.prepare("UPDATE Playlists SET title = (?) WHERE id = (?);")?;
+        let mut stmt = tx.prepare_cached("UPDATE Playlists SET title = (?) WHERE id = (?);")?;
         stmt.execute(params![new_title, playlist_id])?;
         Ok(())
     }
 
     fn modify_playlist_description(&self, tx: &Transaction, playlist_id: i64, new_description: String) -> Result<(), Box<dyn Error>> {
-        let mut stmt = tx.prepare("UPDATE Playlists SET description = (?) WHERE id = (?);")?;
+        let mut stmt = tx.prepare_cached("UPDATE Playlists SET description = (?) WHERE id = (?);")?;
         stmt.execute(params![new_description, playlist_id])?;
         Ok(())
     }
 
     fn update_playlist_modify_time(&self, tx: &Transaction, playlist_id: i64) -> Result<(), Box<dyn Error>> {
-        let mut stmt = tx.prepare("UPDATE Playlists SET modify_time = (?) WHERE id = (?);")?;
+        let mut stmt = tx.prepare_cached("UPDATE Playlists SET modify_time = (?) WHERE id = (?);")?;
         let modify_time = chrono::offset::Utc::now();
         stmt.execute(params![modify_time, playlist_id])?;
         Ok(())
@@ -1550,14 +1550,14 @@ impl Database {
         debug!("SELECT count( * ) FROM Playlist_Entry_Playlist_Junction WHERE playlist_id = (?)");
 
 
-        let mut stmt = tx.prepare("SELECT count( * ) FROM Playlist_Entry_Playlist_Junction WHERE playlist_id = (?)")?;
+        let mut stmt = tx.prepare_cached("SELECT count( * ) FROM Playlist_Entry_Playlist_Junction WHERE playlist_id = (?)")?;
         let count: usize = stmt.query_row([playlist_id], |row| row.get(0))?;
 
         let mut result = vec![0; count];
 
         debug!("SELECT playlist_entry_id FROM Playlist_Entry_Playlist_Junction WHERE playlist_id = (?)");
 
-        let mut stmt = tx.prepare("SELECT playlist_entry_id FROM Playlist_Entry_Playlist_Junction WHERE playlist_id = (?)")?;
+        let mut stmt = tx.prepare_cached("SELECT playlist_entry_id FROM Playlist_Entry_Playlist_Junction WHERE playlist_id = (?)")?;
         let rows = stmt.query_map([playlist_id], |row| {
             let playlist_entry_id: i64 = row.get(0)?;
             Ok(playlist_entry_id)
@@ -1566,7 +1566,7 @@ impl Database {
         for r in rows {
             let playlist_entry_id = r?;
             
-            let mut stmt = tx.prepare("SELECT playlist_position FROM Playlist_Entries WHERE id = (?)")?;
+            let mut stmt = tx.prepare_cached("SELECT playlist_position FROM Playlist_Entries WHERE id = (?)")?;
             let playlist_position: usize = stmt.query_row([playlist_entry_id], |row| row.get(0))?;
 
             _ = std::mem::replace(&mut result[playlist_position], playlist_entry_id);
@@ -1579,13 +1579,13 @@ impl Database {
 
 
     // fn modify_playlist_entry_positition(&self, tx: &Transaction, playlist_entry_id: i64, old_position: usize, new_position: usize) -> Result<(), Box<dyn Error>> {
-    //     let mut stmt = tx.prepare("UPDATE Playlist_Entries SET playlist_position = (?) WHERE id = (?) AND playlist_position = (?);")?;
+    //     let mut stmt = tx.prepare_cached("UPDATE Playlist_Entries SET playlist_position = (?) WHERE id = (?) AND playlist_position = (?);")?;
     //     stmt.execute(params![new_position, playlist_entry_id, old_position])?;
     //     Ok(())
     // }
 
     fn modify_playlist_entry_positition_by_entry_id(&self, tx: &Transaction, playlist_entry_id: i64, new_position: usize) -> Result<(), Box<dyn Error>> {
-        let mut stmt = tx.prepare("UPDATE Playlist_Entries SET playlist_position = (?) WHERE id = (?);")?;
+        let mut stmt = tx.prepare_cached("UPDATE Playlist_Entries SET playlist_position = (?) WHERE id = (?);")?;
         stmt.execute(params![new_position, playlist_entry_id])?;
         Ok(())
     }
@@ -1622,13 +1622,13 @@ impl Database {
         debug!("remove_music_folder: {:?}", path);
         
         //GET ID OF FOLDER FROM FOLDER TABLE
-        let mut stmt = tx.prepare("SELECT id FROM Music_Folders WHERE uri = (?)")?;
+        let mut stmt = tx.prepare_cached("SELECT id FROM Music_Folders WHERE uri = (?)")?;
         let folder_id: i64 = stmt.query_row([path], |row| row.get(0))?;
 
         debug!("folder id: {}", folder_id);
 
         //GET ALL TRACK IDS WITH FOLDER FROM TRACK URI JUNCTION TABLE Track_Folder_Junction
-        let mut stmt = tx.prepare("SELECT track_id FROM Track_Folder_Junction WHERE folder_id = (?);")?;
+        let mut stmt = tx.prepare_cached("SELECT track_id FROM Track_Folder_Junction WHERE folder_id = (?);")?;
         let rows = stmt.query_map([folder_id], |row| {
             let track_id: i64 = row.get(0)?;
             Ok(track_id)
@@ -1645,42 +1645,42 @@ impl Database {
             let track_id = row?;
 
             debug!("removing Track_Folder_Junction track_id = {}", track_id);
-            let mut stmt = tx.prepare("DELETE FROM Track_Folder_Junction WHERE track_id = (?);")?;
+            let mut stmt = tx.prepare_cached("DELETE FROM Track_Folder_Junction WHERE track_id = (?);")?;
             stmt.execute(params![track_id])?;
 
-            let mut stmt = tx.prepare("DELETE FROM Track_Folder_Junction WHERE track_id = (?);")?;
+            let mut stmt = tx.prepare_cached("DELETE FROM Track_Folder_Junction WHERE track_id = (?);")?;
             stmt.execute(params![track_id])?;
 
             debug!("removing Track_Cover_Art_Junction track_id = {}", track_id);
-            let mut stmt = tx.prepare("DELETE FROM Track_Cover_Art_Junction WHERE track_id = (?);")?;
+            let mut stmt = tx.prepare_cached("DELETE FROM Track_Cover_Art_Junction WHERE track_id = (?);")?;
             stmt.execute(params![track_id])?;
 
             debug!("removing Track_Artist_Junction track_id = {}", track_id);
-            let mut stmt = tx.prepare("DELETE FROM Track_Artist_Junction WHERE track_id = (?);")?;
+            let mut stmt = tx.prepare_cached("DELETE FROM Track_Artist_Junction WHERE track_id = (?);")?;
             stmt.execute(params![track_id])?;
 
             debug!("removing Track_Album_Junction track_id = {}", track_id);
-            let mut stmt = tx.prepare("DELETE FROM Track_Album_Junction WHERE track_id = (?);")?;
+            let mut stmt = tx.prepare_cached("DELETE FROM Track_Album_Junction WHERE track_id = (?);")?;
             stmt.execute(params![track_id])?;
 
             debug!("removing Playlist_Entry_Track_Junction track_id = {}", track_id);
-            let mut stmt = tx.prepare("DELETE FROM Playlist_Entry_Track_Junction WHERE track_id = (?);")?;
+            let mut stmt = tx.prepare_cached("DELETE FROM Playlist_Entry_Track_Junction WHERE track_id = (?);")?;
             stmt.execute(params![track_id])?;
 
  
             debug!("removing Plays track_id = {}", track_id);
-            let mut stmt = tx.prepare("DELETE FROM Plays WHERE track_id = (?);")?;
+            let mut stmt = tx.prepare_cached("DELETE FROM Plays WHERE track_id = (?);")?;
             stmt.execute(params![track_id])?;
 
             debug!("removing Tracks track_id = {}", track_id);
-            let mut stmt = tx.prepare("DELETE FROM Tracks WHERE id = (?);")?;
+            let mut stmt = tx.prepare_cached("DELETE FROM Tracks WHERE id = (?);")?;
             stmt.execute(params![track_id])?;
         }
 
         //delete album, artist, playlist, play if none 
         self.prune_all(&tx)?;
 
-        let mut stmt = tx.prepare("DELETE FROM Music_Folders WHERE id = (?);")?;
+        let mut stmt = tx.prepare_cached("DELETE FROM Music_Folders WHERE id = (?);")?;
         stmt.execute(params![folder_id])?;
         debug!("removed folder");
 
@@ -1705,7 +1705,7 @@ impl Database {
     fn prune_albums(&self, tx: &Transaction) -> Result<(), Box<dyn Error>> {
         debug!("prune_albums");
 
-        let mut stmt = tx.prepare("SELECT id FROM Albums;")?;
+        let mut stmt = tx.prepare_cached("SELECT id FROM Albums;")?;
         let rows = stmt.query_map([], |row| {
             let id: i64 = row.get(0)?;
             Ok(id)
@@ -1714,20 +1714,20 @@ impl Database {
             let album_id = row?;
 
             //if there are no tracks in the album, it should not exist
-            let mut stmt = tx.prepare("SELECT EXISTS(SELECT 1 FROM Track_Album_Junction WHERE album_id = (?) LIMIT 1);")?;
+            let mut stmt = tx.prepare_cached("SELECT EXISTS(SELECT 1 FROM Track_Album_Junction WHERE album_id = (?) LIMIT 1);")?;
             let exists: i32 = stmt.query_row([album_id], |row| row.get(0))?;
             
             if exists == 0 {
-                let mut stmt = tx.prepare("DELETE FROM Album_Cover_Art_Junction WHERE album_id = (?);")?;
+                let mut stmt = tx.prepare_cached("DELETE FROM Album_Cover_Art_Junction WHERE album_id = (?);")?;
                 stmt.execute(params![album_id])?;
 
-                let mut stmt = tx.prepare("DELETE FROM Album_Artist_Junction WHERE album_id = (?);")?;
+                let mut stmt = tx.prepare_cached("DELETE FROM Album_Artist_Junction WHERE album_id = (?);")?;
                 stmt.execute(params![album_id])?;
 
-                let mut stmt = tx.prepare("DELETE FROM Album_Genre_Junction WHERE album_id = (?);")?;
+                let mut stmt = tx.prepare_cached("DELETE FROM Album_Genre_Junction WHERE album_id = (?);")?;
                 stmt.execute(params![album_id])?;
 
-                let mut stmt = tx.prepare("DELETE FROM Albums WHERE id = (?);")?;
+                let mut stmt = tx.prepare_cached("DELETE FROM Albums WHERE id = (?);")?;
                 stmt.execute(params![album_id])?;
             }
         }
@@ -1738,7 +1738,7 @@ impl Database {
     fn prune_genres(&self, tx: &Transaction) -> Result<(), Box<dyn Error>> {
         debug!("prune_genres");
 
-        let mut stmt = tx.prepare("SELECT id FROM Genres;")?;
+        let mut stmt = tx.prepare_cached("SELECT id FROM Genres;")?;
         let rows = stmt.query_map([], |row| {
             let id: i64 = row.get(0)?;
             Ok(id)
@@ -1746,11 +1746,11 @@ impl Database {
         for row in rows {
             let genre_id = row?;
 
-            let mut stmt = tx.prepare("SELECT EXISTS(SELECT 1 FROM Album_Genre_Junction WHERE genre_id = (?) LIMIT 1);")?;
+            let mut stmt = tx.prepare_cached("SELECT EXISTS(SELECT 1 FROM Album_Genre_Junction WHERE genre_id = (?) LIMIT 1);")?;
             let exists: i32 = stmt.query_row([genre_id], |row| row.get(0))?;
             
             if exists == 0 {
-                let mut stmt = tx.prepare("DELETE FROM Genres WHERE id = (?);")?;
+                let mut stmt = tx.prepare_cached("DELETE FROM Genres WHERE id = (?);")?;
                 stmt.execute(params![genre_id])?;
             }
         }
@@ -1760,7 +1760,7 @@ impl Database {
     fn prune_file_uri(&self, tx: &Transaction) -> Result<(), Box<dyn Error>> {
         debug!("prune_file_uri");
 
-        let mut stmt = tx.prepare("SELECT id FROM File_URIs;")?;
+        let mut stmt = tx.prepare_cached("SELECT id FROM File_URIs;")?;
         let rows = stmt.query_map([], |row| {
             let id: i64 = row.get(0)?;
             Ok(id)
@@ -1769,14 +1769,14 @@ impl Database {
         for row in rows {
             let file_uri_id = row?;
 
-            let mut stmt = tx.prepare("SELECT EXISTS(SELECT 1 FROM Tracks WHERE file_uri_id = (?) LIMIT 1);")?;
+            let mut stmt = tx.prepare_cached("SELECT EXISTS(SELECT 1 FROM Tracks WHERE file_uri_id = (?) LIMIT 1);")?;
             let exists: i32 = stmt.query_row([file_uri_id], |row| row.get(0))?;
             
             if exists == 0 {
-                let mut stmt = tx.prepare("DELETE FROM Folder_File_Junction WHERE file_id = (?);")?;
+                let mut stmt = tx.prepare_cached("DELETE FROM Folder_File_Junction WHERE file_id = (?);")?;
                 stmt.execute(params![file_uri_id])?;
 
-                let mut stmt = tx.prepare("DELETE FROM File_URIs WHERE id = (?);")?;
+                let mut stmt = tx.prepare_cached("DELETE FROM File_URIs WHERE id = (?);")?;
                 stmt.execute(params![file_uri_id])?;
             }
         }
@@ -1788,7 +1788,7 @@ impl Database {
     fn prune_artists(&self, tx: &Transaction) -> Result<(), Box<dyn Error>> {
         debug!("prune_artists");
 
-        let mut stmt = tx.prepare("SELECT id FROM Artists;")?;
+        let mut stmt = tx.prepare_cached("SELECT id FROM Artists;")?;
         let rows = stmt.query_map([], |row| {
             let id: i64 = row.get(0)?;
             Ok(id)
@@ -1796,14 +1796,14 @@ impl Database {
         for row in rows {
             let artist_id = row?;
 
-            let mut stmt = tx.prepare("SELECT EXISTS(SELECT 1 FROM Album_Artist_Junction WHERE artist_id = (?) LIMIT 1) OR EXISTS(SELECT 1 FROM Track_Artist_Junction WHERE artist_id = (?) LIMIT 1);")?;
+            let mut stmt = tx.prepare_cached("SELECT EXISTS(SELECT 1 FROM Album_Artist_Junction WHERE artist_id = (?) LIMIT 1) OR EXISTS(SELECT 1 FROM Track_Artist_Junction WHERE artist_id = (?) LIMIT 1);")?;
             let exists: i32 = stmt.query_row([artist_id, artist_id], |row| row.get(0))?;
             
             if exists == 0 {
-                let mut stmt = tx.prepare("DELETE FROM Artist_Discog_Artist_Image_Junction WHERE artist_id = (?);")?;
+                let mut stmt = tx.prepare_cached("DELETE FROM Artist_Discog_Artist_Image_Junction WHERE artist_id = (?);")?;
                 stmt.execute(params![artist_id])?;
 
-                let mut stmt = tx.prepare("DELETE FROM Artists WHERE id = (?);")?;
+                let mut stmt = tx.prepare_cached("DELETE FROM Artists WHERE id = (?);")?;
                 stmt.execute(params![artist_id])?;
             }
         }
@@ -1814,7 +1814,7 @@ impl Database {
     fn prune_cover_art(&self, tx: &Transaction) -> Result<(), Box<dyn Error>> {
         debug!("prune_cover_art");
 
-        let mut stmt = tx.prepare("SELECT id FROM Cover_Art;")?;
+        let mut stmt = tx.prepare_cached("SELECT id FROM Cover_Art;")?;
         let rows = stmt.query_map([], |row| {
             let id: i64 = row.get(0)?;
             Ok(id)
@@ -1822,11 +1822,11 @@ impl Database {
         for row in rows {
             let cover_art_id = row?;
 
-            let mut stmt = tx.prepare("SELECT EXISTS(SELECT 1 FROM Track_Cover_Art_Junction WHERE cover_art_id = (?) LIMIT 1) OR EXISTS(SELECT 1 FROM Album_Cover_Art_Junction WHERE cover_art_id = (?) LIMIT 1);")?;
+            let mut stmt = tx.prepare_cached("SELECT EXISTS(SELECT 1 FROM Track_Cover_Art_Junction WHERE cover_art_id = (?) LIMIT 1) OR EXISTS(SELECT 1 FROM Album_Cover_Art_Junction WHERE cover_art_id = (?) LIMIT 1);")?;
             let exists: i32 = stmt.query_row([cover_art_id, cover_art_id], |row| row.get(0))?;
             
             if exists == 0 {
-                let mut stmt = tx.prepare("DELETE FROM Cover_Art WHERE id = (?);")?;
+                let mut stmt = tx.prepare_cached("DELETE FROM Cover_Art WHERE id = (?);")?;
                 stmt.execute(params![cover_art_id])?;
             }
         }
@@ -1836,7 +1836,7 @@ impl Database {
     fn prune_artist_image(&self, tx: &Transaction) -> Result<(), Box<dyn Error>> {
         debug!("prune_artist_image");
 
-        let mut stmt = tx.prepare("SELECT id FROM Discog_Artist_Image;")?;
+        let mut stmt = tx.prepare_cached("SELECT id FROM Discog_Artist_Image;")?;
         let rows = stmt.query_map([], |row| {
             let id: i64 = row.get(0)?;
             Ok(id)
@@ -1844,11 +1844,11 @@ impl Database {
         for row in rows {
             let image_id = row?;
 
-            let mut stmt = tx.prepare("SELECT EXISTS(SELECT 1 FROM Artist_Discog_Artist_Image_Junction WHERE image_id = (?) LIMIT 1);")?;
+            let mut stmt = tx.prepare_cached("SELECT EXISTS(SELECT 1 FROM Artist_Discog_Artist_Image_Junction WHERE image_id = (?) LIMIT 1);")?;
             let exists: i32 = stmt.query_row([image_id], |row| row.get(0))?;
             
             if exists == 0 {
-                let mut stmt = tx.prepare("DELETE FROM Discog_Artist_Image WHERE id = (?);")?;
+                let mut stmt = tx.prepare_cached("DELETE FROM Discog_Artist_Image WHERE id = (?);")?;
                 stmt.execute(params![image_id])?;
             }
         }
@@ -1858,7 +1858,7 @@ impl Database {
 
     fn prune_playlists(&self, tx: &Transaction) -> Result<(), Box<dyn Error>> {
         debug!("prune_playlists Playlist_Entries");
-        let mut stmt = tx.prepare("SELECT id FROM Playlist_Entries;")?;
+        let mut stmt = tx.prepare_cached("SELECT id FROM Playlist_Entries;")?;
         let rows = stmt.query_map([], |row| {
             let id: i64 = row.get(0)?;
             Ok(id)
@@ -1866,23 +1866,23 @@ impl Database {
         for row in rows {
             let playlist_entry_id = row?;
             debug!("prune_playlists Playlist_Entry_Track_Junction");
-            let mut stmt = tx.prepare("SELECT EXISTS(SELECT 1 FROM Playlist_Entry_Track_Junction WHERE playlist_entry_id = (?) LIMIT 1);")?;
+            let mut stmt = tx.prepare_cached("SELECT EXISTS(SELECT 1 FROM Playlist_Entry_Track_Junction WHERE playlist_entry_id = (?) LIMIT 1);")?;
             let exists: i32 = stmt.query_row([playlist_entry_id], |row| row.get(0))?;
             
             if exists == 0 {
                 debug!("prune_playlists delete Playlist Entry");
                 // if the junction does not exist, remove from playlist and then delete entry.
-                // let mut stmt = tx.prepare("SELECT playlist_id FROM Playlist_Entry_Playlist_Junction WHERE playlist_entry_id = (?);")?;
+                // let mut stmt = tx.prepare_cached("SELECT playlist_id FROM Playlist_Entry_Playlist_Junction WHERE playlist_entry_id = (?);")?;
                 // let playlist_id: i64 = stmt.query_row([playlist_entry_id], |row| row.get(0))?;
 
                 self.delete_track_from_playlist(&tx, playlist_entry_id)?;
 
-                let mut stmt = tx.prepare("DELETE FROM Playlist_Entries WHERE id = (?);")?;
+                let mut stmt = tx.prepare_cached("DELETE FROM Playlist_Entries WHERE id = (?);")?;
                 stmt.execute(params![playlist_entry_id])?;
             }
         }
         debug!("prune_playlists Playlists");
-        let mut stmt = tx.prepare("SELECT id FROM Playlists;")?;
+        let mut stmt = tx.prepare_cached("SELECT id FROM Playlists;")?;
         let rows = stmt.query_map([], |row| {
             let id: i64 = row.get(0)?;
             Ok(id)
@@ -1890,11 +1890,11 @@ impl Database {
         for row in rows {
             let playlist_id = row?;
 
-            let mut stmt = tx.prepare("SELECT EXISTS(SELECT 1 FROM Playlist_Entry_Playlist_Junction WHERE playlist_id = (?) LIMIT 1);")?;
+            let mut stmt = tx.prepare_cached("SELECT EXISTS(SELECT 1 FROM Playlist_Entry_Playlist_Junction WHERE playlist_id = (?) LIMIT 1);")?;
             let exists: i32 = stmt.query_row([playlist_id], |row| row.get(0))?;
             
             if exists == 0 {
-                let mut stmt = tx.prepare("DELETE FROM Playlists WHERE id = (?);")?;
+                let mut stmt = tx.prepare_cached("DELETE FROM Playlists WHERE id = (?);")?;
                 stmt.execute(params![playlist_id])?;
             }
         }
@@ -1912,7 +1912,7 @@ impl Database {
         let statements = |tx: &Transaction| -> Result<(), Box<dyn Error>> {
             debug!("begin removal statements");
 
-            let mut stmt = tx.prepare("DELETE FROM Playlist_Entry_Playlist_Junction WHERE playlist_id = (?);")?;
+            let mut stmt = tx.prepare_cached("DELETE FROM Playlist_Entry_Playlist_Junction WHERE playlist_id = (?);")?;
             stmt.execute(params![playlist_id])?;
             debug!("removed Playlist_Entry_Playlist_Junction");
 
@@ -1921,17 +1921,17 @@ impl Database {
             debug!("removing entries: {:?}", entries);
             for entry_id in entries {
 
-                let mut stmt = tx.prepare("DELETE FROM Playlist_Entry_Track_Junction WHERE playlist_entry_id = (?);")?;
+                let mut stmt = tx.prepare_cached("DELETE FROM Playlist_Entry_Track_Junction WHERE playlist_entry_id = (?);")?;
                 stmt.execute(params![entry_id])?;
                 debug!("removed Playlist_Entry_Track_Junction");
 
-                let mut stmt = tx.prepare("DELETE FROM Playlist_Entries WHERE id = (?);")?;
+                let mut stmt = tx.prepare_cached("DELETE FROM Playlist_Entries WHERE id = (?);")?;
                 stmt.execute(params![entry_id])?;
                 debug!("removed Playlist_Entries");
             }
             debug!("removed Playlist_Entries & Playlist_Entry_Track_Junction");
 
-            let mut stmt = tx.prepare("DELETE FROM Playlists WHERE id = (?);")?;
+            let mut stmt = tx.prepare_cached("DELETE FROM Playlists WHERE id = (?);")?;
             stmt.execute(params![playlist_id])?;
             debug!("removed playlist");
 
@@ -1960,7 +1960,7 @@ impl Database {
     fn delete_track_from_playlist(&self, tx: &Transaction, playlist_entry_id: i64) -> Result<Option<i64>, Box<dyn Error>> {
         debug!("SELECT playlist_id FROM Playlist_Entry_Playlist_Junction WHERE playlist_entry_id = ({})", playlist_entry_id);
 
-        let mut stmt = tx.prepare("SELECT playlist_id FROM Playlist_Entry_Playlist_Junction WHERE playlist_entry_id = (?)")?;
+        let mut stmt = tx.prepare_cached("SELECT playlist_id FROM Playlist_Entry_Playlist_Junction WHERE playlist_entry_id = (?)")?;
         let playlist_id: i64 = match stmt.query_row([playlist_entry_id], |row| row.get(0)).optional()? {
             Some(id) => id,
             None => return Ok(None),
@@ -1968,7 +1968,7 @@ impl Database {
 
         debug!("SELECT playlist_position FROM Playlist_Entries WHERE id = (?)");
 
-        let mut stmt = tx.prepare("SELECT playlist_position FROM Playlist_Entries WHERE id = (?)")?;
+        let mut stmt = tx.prepare_cached("SELECT playlist_position FROM Playlist_Entries WHERE id = (?)")?;
         let playlist_position: usize = stmt.query_row([playlist_entry_id], |row| row.get(0))?;
         
         let mut entries = self.query_ordered_vec_of_playlist_entries(&tx, playlist_id)?;
@@ -1978,15 +1978,15 @@ impl Database {
         }
 
         debug!("begin removal statements");
-        let mut stmt = tx.prepare("DELETE FROM Playlist_Entry_Playlist_Junction WHERE playlist_entry_id = (?);")?;
+        let mut stmt = tx.prepare_cached("DELETE FROM Playlist_Entry_Playlist_Junction WHERE playlist_entry_id = (?);")?;
         stmt.execute(params![playlist_entry_id])?;
         debug!("removed Playlist_Entry_Playlist_Junction");
 
-        let mut stmt = tx.prepare("DELETE FROM Playlist_Entry_Track_Junction WHERE playlist_entry_id = (?);")?;
+        let mut stmt = tx.prepare_cached("DELETE FROM Playlist_Entry_Track_Junction WHERE playlist_entry_id = (?);")?;
         stmt.execute(params![playlist_entry_id])?;
         debug!("removed Playlist_Entry_Track_Junction");
 
-        let mut stmt = tx.prepare("DELETE FROM Playlist_Entries WHERE id = (?);")?;
+        let mut stmt = tx.prepare_cached("DELETE FROM Playlist_Entries WHERE id = (?);")?;
         stmt.execute(params![playlist_entry_id])?;
         debug!("removed Playlist_Entries");
 
