@@ -1073,57 +1073,53 @@ impl Database {
         Ok(result)
     }
 
-    // Used in model population
+    // Used in model population. Join both entry relationships in one pass.
     pub fn query_playlist_entries(&self) -> Result<Vec<(i64, i64, i64, i64)>, Box<dyn Error>> {
         let conn = self.imp().conn.borrow();
         let conn = conn.as_ref().ok_or("Connection not established")?;
-        
-        let mut stmt = conn.prepare("SELECT * FROM playlist_entries;")?;
+
+        let mut stmt = conn.prepare(
+            "SELECT pe.id, pep.playlist_id, pe.playlist_position, pet.track_id
+             FROM Playlist_Entries pe
+             INNER JOIN Playlist_Entry_Playlist_Junction pep
+                 ON pep.playlist_entry_id = pe.id
+             INNER JOIN Playlist_Entry_Track_Junction pet
+                 ON pet.playlist_entry_id = pe.id
+             ORDER BY pep.playlist_id, pe.playlist_position;"
+        )?;
         let rows = stmt.query_map([], |row| {
-            let id: i64 = row.get(0)?;
-            let playlist_position: i64 = row.get(1)?;
-            Ok((id, playlist_position))
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
         })?;
 
         let mut result = Vec::new();
         for row in rows {
-            let (playlist_entry_id, playlist_position) = row?;
-
-            let mut stmt = conn.prepare("SELECT playlist_id FROM Playlist_Entry_Playlist_Junction WHERE playlist_entry_id = (?);")?;
-            let playlist_id: i64 = stmt.query_row([playlist_entry_id], |row| row.get(0))?;
-
-            let mut stmt = conn.prepare("SELECT track_id FROM Playlist_Entry_Track_Junction WHERE playlist_entry_id = (?);")?;
-            let track_id: i64 = stmt.query_row([playlist_entry_id], |row| row.get(0))?;
-
-            result.push((playlist_entry_id, playlist_id, playlist_position, track_id));
+            result.push(row?);
         }
-
         Ok(result)
     }
 
     pub fn query_playlist_entries_by_playlist_id(&self, playlist_id: i64) -> Result<Vec<(i64, i64, i64)>, Box<dyn Error>> {
         let conn = self.imp().conn.borrow();
         let conn = conn.as_ref().ok_or("Connection not established")?;
-        
-        let mut stmt = conn.prepare("SELECT playlist_entry_id FROM Playlist_Entry_Playlist_Junction WHERE playlist_id = (?);")?;
+
+        let mut stmt = conn.prepare(
+            "SELECT pe.id, pe.playlist_position, pet.track_id
+             FROM Playlist_Entries pe
+             INNER JOIN Playlist_Entry_Playlist_Junction pep
+                 ON pep.playlist_entry_id = pe.id
+             INNER JOIN Playlist_Entry_Track_Junction pet
+                 ON pet.playlist_entry_id = pe.id
+             WHERE pep.playlist_id = ?
+             ORDER BY pe.playlist_position;"
+        )?;
         let rows = stmt.query_map([playlist_id], |row| {
-            let id: i64 = row.get(0)?;
-            Ok(id)
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
         })?;
 
         let mut result = Vec::new();
         for row in rows {
-            let playlist_entry_id = row?;
-
-            let mut stmt = conn.prepare("SELECT playlist_position FROM Playlist_Entries WHERE id = (?);")?;
-            let playlist_position: i64 = stmt.query_row([playlist_entry_id], |row| row.get(0))?;
-
-            let mut stmt = conn.prepare("SELECT track_id FROM Playlist_Entry_Track_Junction WHERE playlist_entry_id = (?);")?;
-            let track_id: i64 = stmt.query_row([playlist_entry_id], |row| row.get(0))?;
-
-            result.push((playlist_entry_id, playlist_position, track_id));
+            result.push(row?);
         }
-
         Ok(result)
     }
 
