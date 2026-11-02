@@ -35,6 +35,7 @@ jobs:
             file \
             gettext \
             libadwaita-1-dev \
+            libdbus-1-dev \
             libfuse2 \
             libglib2.0-dev \
             libgirepository1.0-dev \
@@ -43,6 +44,7 @@ jobs:
             libgstreamer-plugins-base1.0-dev \
             libgtk-4-dev \
             libssl-dev \
+            libxml2-utils \
             librsvg2-dev \
             libsqlite3-dev \
             meson \
