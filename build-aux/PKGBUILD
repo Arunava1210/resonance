@@ -8,7 +8,7 @@ pkgdesc='An intuitive GTK4/LibAdwaita music player'
 url='https://github.com/nate-xyz/resonance'
 license=('GPL3')
 depends=('rust' 'gtk4' 'gstreamer' 'gst-plugins-base' 'gst-plugins-bad'
-	'libadwaita' 'python-tqdm' 'python-mutagen' 'python-loguru')
+	'libadwaita')
 makedepends=('git' 'meson' 'ninja')
 provides=("resonance=$pkgver")
 source=("git+${url}.git#commit=72cc1d2")
