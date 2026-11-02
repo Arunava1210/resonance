@@ -731,7 +731,7 @@ mod collection_iteration_tests {
     #[test]
     fn returns_false_for_unloaded_and_empty_collections() {
         let unloaded: RefCell<Option<HashMap<i64, Rc<String>>>> = RefCell::new(None);
-        let empty = RefCell::new(Some(HashMap::new()));
+        let empty: RefCell<Option<HashMap<i64, Rc<String>>>> = RefCell::new(Some(HashMap::new()));
 
         assert!(!visit_collection(&unloaded, |_| {}));
         assert!(!visit_collection(&empty, |_| {}));

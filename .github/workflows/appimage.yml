@@ -110,7 +110,9 @@ jobs:
             --plugin gstreamer \
             --output appimage
           mkdir -p dist
-          mv Resonance-x86_64.AppImage dist/Resonance-x86_64.AppImage
+          appimage="$(find . -maxdepth 1 -type f -iname '*.appimage' -print -quit)"
+          test -n "$appimage"
+          mv "$appimage" dist/Resonance-x86_64.AppImage
 
       - name: Smoke-test the AppImage
         env:
@@ -122,6 +124,7 @@ jobs:
           test -d AppDir/usr/lib/gstreamer-1.0
           test -d AppDir/usr/lib/gtk-4.0
           temp_home="$(mktemp -d)"
+          mkdir -p "$temp_home/config" "$temp_home/data" "$temp_home/cache"
           set +e
           XDG_CONFIG_HOME="$temp_home/config" \
           XDG_DATA_HOME="$temp_home/data" \
