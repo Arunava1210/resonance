@@ -41,44 +41,37 @@ pub enum MapVal {
 #[pyclass]
 struct LoggingStdout {
     last_update_time: RefCell<Option<Instant>>,
+    sender: Sender<DatabaseAction>,
 }
-
 
 #[pymethods]
 impl LoggingStdout {
     #[new]
-    fn new() -> Self {
+    fn new(sender: Sender<DatabaseAction>) -> Self {
         Self {
             last_update_time: RefCell::new(None),
+            sender,
         }
     }
 
     fn write(&self, data: &str) {
-        //println!("stdout from python: {:?}", data);
         if data.contains("ERROR") || data.contains("Exception") {
             error!("{}", data);
         } else if data.contains("DEBUG") {
             debug!("{}", data);
-        } else if data.contains("%"){
-            if let Some(start) = self.last_update_time.take() {
-                if start.elapsed() > Duration::from_secs(3) {
-                    if let Some(window) = util::window() {
-                        window.set_import_percentage(data);
-                    }
-                    self.last_update_time.replace(Some(Instant::now()));
-                } else {
-                    self.last_update_time.replace(Some(start));
-                }
-            } else {
-                if let Some(window) = util::window() {
-                    window.set_import_percentage(data);
-                }
+        } else if data.contains('%') {
+            let should_update = match self.last_update_time.borrow().as_ref() {
+                Some(last_update) => last_update.elapsed() > Duration::from_secs(3),
+                None => true,
+            };
+
+            if should_update {
+                let _ = self.sender.send(DatabaseAction::SetImportPercentage(data.to_string()));
                 self.last_update_time.replace(Some(Instant::now()));
             }
         }
     }
 }
-
 #[derive(Debug)]
 pub struct Importer {
     pub settings: gio::Settings,
@@ -93,59 +86,60 @@ impl Importer {
 
     pub fn extract_folder(&self, folder_path: String, sender: Sender<DatabaseAction>) {
         std::thread::spawn(move || {
+            let _ = sender.send(DatabaseAction::SetImportMessage(
+                "Extracting tags from music files.".to_string()
+            ));
+
             let from_python = Python::with_gil(|py| -> Result<(), Box<dyn Error>> {
                 let sys = py.import("sys")?;
-                sys.setattr("stderr", LoggingStdout::new().into_py(py))?;
+                sys.setattr("stderr", LoggingStdout::new(sender.clone()).into_py(py))?;
                 py.run("print('importing')", None, None)?;
 
-                let window = util::window();
+                let code_main = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/main.py"));
+                let code_extracting = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/extracting.py"));
+                let code_importer = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/importer.py"));
+                let code_translate_dicts = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/translate_dicts.py"));
+                let code_util = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/util.py"));
 
-                if let Some(w) = window {
-                    w.set_import_message("Extracting tags from music files.");
-                
-                    let code_main = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/main.py"));
-                    let code_extracting = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/extracting.py"));
-                    let code_importer = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/importer.py"));
-                    let code_translate_dicts = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/translate_dicts.py"));
-                    let code_util = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/util.py"));
-        
-                    PyModule::from_code(py, code_util, "util", "util")?;
-                    PyModule::from_code(py, code_translate_dicts,"translate_dicts", "translate_dicts")?;
-                    PyModule::from_code(py, code_extracting, "extracting", "extracting")?;
-                    PyModule::from_code(py, code_importer, "importer", "importer")?;
-        
-                    let module = PyModule::from_code(py, code_main, "main", "")?;
-                    let args = (&folder_path,);
-                    let object: Py<PyAny> = module
-                        .getattr("tags_and_cover_art")?
-                        .call1(args)
-                        .map_err(|e| {
-                            e.print_and_set_sys_last_vars(py);
-                            e
-                        })?
-                        .into();
-        
-                    debug!("retrieving tags & cover art ... ");
-        
-                    let all: (HashMap<String, HashMap<String, HashMap<String, MapVal>>>, HashMap<String, &[u8]>) = object.extract(py)?;
-                    let (tags, bytes_map) = all;
-                    if tags.is_empty() {
-                        error!("Nothing extracted.");
-                        return Err(Box::new(ImportError("Tag Map Empty".into())));
-                    }
+                PyModule::from_code(py, code_util, "util", "util")?;
+                PyModule::from_code(py, code_translate_dicts, "translate_dicts", "translate_dicts")?;
+                PyModule::from_code(py, code_extracting, "extracting", "extracting")?;
+                PyModule::from_code(py, code_importer, "importer", "importer")?;
 
-                    let mut vec_byte_map: HashMap<String, Vec<u8>> = HashMap::new();
-                    for (uri, b) in bytes_map.iter() {
-                        vec_byte_map.insert(uri.clone(), (*b).to_vec());
-                    }
+                let module = PyModule::from_code(py, code_main, "main", "")?;
+                let object: Py<PyAny> = module
+                    .getattr("tags_and_cover_art")?
+                    .call1((&folder_path,))?
+                    .into();
 
-                    send!(sender, DatabaseAction::ConstructFromTags((folder_path, tags, vec_byte_map)));
-                } else {
-                    error!("Unable to retrieve window.")
+                debug!("retrieving tags & cover art ... ");
+
+                let all: (
+                    HashMap<String, HashMap<String, HashMap<String, MapVal>>>,
+                    HashMap<String, &[u8]>,
+                ) = object.extract(py)?;
+                let (tags, bytes_map) = all;
+
+                if tags.is_empty() {
+                    return Err(Box::new(ImportError("Tag Map Empty".into())));
                 }
+
+                let mut vec_byte_map = HashMap::with_capacity(bytes_map.len());
+                for (uri, bytes) in bytes_map.iter() {
+                    vec_byte_map.insert(uri.clone(), bytes.to_vec());
+                }
+
+                send!(sender, DatabaseAction::ConstructFromTags((
+                    folder_path,
+                    tags,
+                    vec_byte_map,
+                )));
                 Ok(())
             });
-            from_python.unwrap();
+
+            if let Err(err) = from_python {
+                error!("Music metadata extraction failed: {}", err);
+            }
         });
     }
 
