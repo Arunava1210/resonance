@@ -371,7 +371,7 @@ fn first_id3_picture(tags: Option<&audex::id3::ID3Tags>) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_audio_file, is_supported_audio_file, MapVal};
+    use super::{extract_audio_file, is_supported_audio_file, scan_folder, MapVal};
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -400,7 +400,9 @@ mod tests {
             "with-id3.aiff",
             "alac.m4a",
             "silence-1.wma",
+            "sample.asf",
             "sample.wmv",
+            "alac.mp4",
         ];
 
         for filename in fixtures {
@@ -430,6 +432,17 @@ mod tests {
         let mp4 = extract_audio_file(&fixture_root.join("covr-with-name.m4a"))
             .expect("MP4 fixture should parse");
         assert!(mp4.2.is_some(), "MP4 embedded artwork should be extracted");
+
+        // Exercise the real parallel directory scanner used by Importer.
+        let (progress_sender, _progress_receiver) =
+            gtk::glib::MainContext::channel(gtk::glib::PRIORITY_DEFAULT);
+        let (scanned_tags, scanned_artwork) = scan_folder(&fixture_root, progress_sender)
+            .expect("The full fixture directory should import successfully");
+        assert_eq!(scanned_tags.len(), fixtures.len());
+        assert!(scanned_artwork.contains_key(
+            fixture_root.join("silence-44-s.flac").to_string_lossy().as_ref()
+        ));
+
     }
 
     #[test]
