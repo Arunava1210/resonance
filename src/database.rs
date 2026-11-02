@@ -1705,55 +1705,56 @@ impl Database {
     fn prune_albums(&self, tx: &Transaction) -> Result<(), Box<dyn Error>> {
         debug!("prune_albums");
 
-        let mut stmt = tx.prepare_cached("SELECT id FROM Albums;")?;
-        let rows = stmt.query_map([], |row| {
-            let id: i64 = row.get(0)?;
-            Ok(id)
-        })?;
-        for row in rows {
-            let album_id = row?;
+        // Remove relationships for albums with no remaining tracks, then
+        // remove the orphaned album rows in set-based operations.
+        tx.execute(
+            "DELETE FROM Album_Cover_Art_Junction
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM Track_Album_Junction
+                 WHERE Track_Album_Junction.album_id = Album_Cover_Art_Junction.album_id
+             );",
+            [],
+        )?;
+        tx.execute(
+            "DELETE FROM Album_Artist_Junction
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM Track_Album_Junction
+                 WHERE Track_Album_Junction.album_id = Album_Artist_Junction.album_id
+             );",
+            [],
+        )?;
+        tx.execute(
+            "DELETE FROM Album_Genre_Junction
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM Track_Album_Junction
+                 WHERE Track_Album_Junction.album_id = Album_Genre_Junction.album_id
+             );",
+            [],
+        )?;
+        tx.execute(
+            "DELETE FROM Albums
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM Track_Album_Junction
+                 WHERE Track_Album_Junction.album_id = Albums.id
+             );",
+            [],
+        )?;
 
-            //if there are no tracks in the album, it should not exist
-            let mut stmt = tx.prepare_cached("SELECT EXISTS(SELECT 1 FROM Track_Album_Junction WHERE album_id = (?) LIMIT 1);")?;
-            let exists: i32 = stmt.query_row([album_id], |row| row.get(0))?;
-            
-            if exists == 0 {
-                let mut stmt = tx.prepare_cached("DELETE FROM Album_Cover_Art_Junction WHERE album_id = (?);")?;
-                stmt.execute(params![album_id])?;
-
-                let mut stmt = tx.prepare_cached("DELETE FROM Album_Artist_Junction WHERE album_id = (?);")?;
-                stmt.execute(params![album_id])?;
-
-                let mut stmt = tx.prepare_cached("DELETE FROM Album_Genre_Junction WHERE album_id = (?);")?;
-                stmt.execute(params![album_id])?;
-
-                let mut stmt = tx.prepare_cached("DELETE FROM Albums WHERE id = (?);")?;
-                stmt.execute(params![album_id])?;
-            }
-        }
         Ok(())
     }
-
 
     fn prune_genres(&self, tx: &Transaction) -> Result<(), Box<dyn Error>> {
         debug!("prune_genres");
 
-        let mut stmt = tx.prepare_cached("SELECT id FROM Genres;")?;
-        let rows = stmt.query_map([], |row| {
-            let id: i64 = row.get(0)?;
-            Ok(id)
-        })?;
-        for row in rows {
-            let genre_id = row?;
+        tx.execute(
+            "DELETE FROM Genres
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM Album_Genre_Junction
+                 WHERE Album_Genre_Junction.genre_id = Genres.id
+             );",
+            [],
+        )?;
 
-            let mut stmt = tx.prepare_cached("SELECT EXISTS(SELECT 1 FROM Album_Genre_Junction WHERE genre_id = (?) LIMIT 1);")?;
-            let exists: i32 = stmt.query_row([genre_id], |row| row.get(0))?;
-            
-            if exists == 0 {
-                let mut stmt = tx.prepare_cached("DELETE FROM Genres WHERE id = (?);")?;
-                stmt.execute(params![genre_id])?;
-            }
-        }
         Ok(())
     }
 
@@ -1789,73 +1790,69 @@ impl Database {
     fn prune_artists(&self, tx: &Transaction) -> Result<(), Box<dyn Error>> {
         debug!("prune_artists");
 
-        let mut stmt = tx.prepare_cached("SELECT id FROM Artists;")?;
-        let rows = stmt.query_map([], |row| {
-            let id: i64 = row.get(0)?;
-            Ok(id)
-        })?;
-        for row in rows {
-            let artist_id = row?;
+        // Keep artists referenced by either albums or tracks. Remove any
+        // orphaned image relationships before deleting the artist rows.
+        tx.execute(
+            "DELETE FROM Artist_Discog_Artist_Image_Junction
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM Album_Artist_Junction
+                 WHERE Album_Artist_Junction.artist_id = Artist_Discog_Artist_Image_Junction.artist_id
+             )
+             AND NOT EXISTS (
+                 SELECT 1 FROM Track_Artist_Junction
+                 WHERE Track_Artist_Junction.artist_id = Artist_Discog_Artist_Image_Junction.artist_id
+             );",
+            [],
+        )?;
+        tx.execute(
+            "DELETE FROM Artists
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM Album_Artist_Junction
+                 WHERE Album_Artist_Junction.artist_id = Artists.id
+             )
+             AND NOT EXISTS (
+                 SELECT 1 FROM Track_Artist_Junction
+                 WHERE Track_Artist_Junction.artist_id = Artists.id
+             );",
+            [],
+        )?;
 
-            let mut stmt = tx.prepare_cached("SELECT EXISTS(SELECT 1 FROM Album_Artist_Junction WHERE artist_id = (?) LIMIT 1) OR EXISTS(SELECT 1 FROM Track_Artist_Junction WHERE artist_id = (?) LIMIT 1);")?;
-            let exists: i32 = stmt.query_row([artist_id, artist_id], |row| row.get(0))?;
-            
-            if exists == 0 {
-                let mut stmt = tx.prepare_cached("DELETE FROM Artist_Discog_Artist_Image_Junction WHERE artist_id = (?);")?;
-                stmt.execute(params![artist_id])?;
-
-                let mut stmt = tx.prepare_cached("DELETE FROM Artists WHERE id = (?);")?;
-                stmt.execute(params![artist_id])?;
-            }
-        }
         Ok(())
     }
-
 
     fn prune_cover_art(&self, tx: &Transaction) -> Result<(), Box<dyn Error>> {
         debug!("prune_cover_art");
 
-        let mut stmt = tx.prepare_cached("SELECT id FROM Cover_Art;")?;
-        let rows = stmt.query_map([], |row| {
-            let id: i64 = row.get(0)?;
-            Ok(id)
-        })?;
-        for row in rows {
-            let cover_art_id = row?;
+        tx.execute(
+            "DELETE FROM Cover_Art
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM Track_Cover_Art_Junction
+                 WHERE Track_Cover_Art_Junction.cover_art_id = Cover_Art.id
+             )
+             AND NOT EXISTS (
+                 SELECT 1 FROM Album_Cover_Art_Junction
+                 WHERE Album_Cover_Art_Junction.cover_art_id = Cover_Art.id
+             );",
+            [],
+        )?;
 
-            let mut stmt = tx.prepare_cached("SELECT EXISTS(SELECT 1 FROM Track_Cover_Art_Junction WHERE cover_art_id = (?) LIMIT 1) OR EXISTS(SELECT 1 FROM Album_Cover_Art_Junction WHERE cover_art_id = (?) LIMIT 1);")?;
-            let exists: i32 = stmt.query_row([cover_art_id, cover_art_id], |row| row.get(0))?;
-            
-            if exists == 0 {
-                let mut stmt = tx.prepare_cached("DELETE FROM Cover_Art WHERE id = (?);")?;
-                stmt.execute(params![cover_art_id])?;
-            }
-        }
         Ok(())
     }
 
     fn prune_artist_image(&self, tx: &Transaction) -> Result<(), Box<dyn Error>> {
         debug!("prune_artist_image");
 
-        let mut stmt = tx.prepare_cached("SELECT id FROM Discog_Artist_Image;")?;
-        let rows = stmt.query_map([], |row| {
-            let id: i64 = row.get(0)?;
-            Ok(id)
-        })?;
-        for row in rows {
-            let image_id = row?;
+        tx.execute(
+            "DELETE FROM Discog_Artist_Image
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM Artist_Discog_Artist_Image_Junction
+                 WHERE Artist_Discog_Artist_Image_Junction.image_id = Discog_Artist_Image.id
+             );",
+            [],
+        )?;
 
-            let mut stmt = tx.prepare_cached("SELECT EXISTS(SELECT 1 FROM Artist_Discog_Artist_Image_Junction WHERE image_id = (?) LIMIT 1);")?;
-            let exists: i32 = stmt.query_row([image_id], |row| row.get(0))?;
-            
-            if exists == 0 {
-                let mut stmt = tx.prepare_cached("DELETE FROM Discog_Artist_Image WHERE id = (?);")?;
-                stmt.execute(params![image_id])?;
-            }
-        }
         Ok(())
     }
-
 
     fn prune_playlists(&self, tx: &Transaction) -> Result<(), Box<dyn Error>> {
         debug!("prune_playlists Playlist_Entries");
