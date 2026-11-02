@@ -79,16 +79,19 @@ struct LoggingStdout {
     sender: Sender<DatabaseAction>,
 }
 
-#[pymethods]
 impl LoggingStdout {
-    #[new]
+    // Construct this Python-backed object from Rust so the GLib sender never
+    // crosses the Python constructor boundary.
     fn new(sender: Sender<DatabaseAction>) -> Self {
         Self {
             last_update_time: RefCell::new(None),
             sender,
         }
     }
+}
 
+#[pymethods]
+impl LoggingStdout {
     fn write(&self, data: &str) {
         if data.contains("ERROR") || data.contains("Exception") {
             error!("{}", data);
