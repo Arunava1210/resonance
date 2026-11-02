@@ -385,6 +385,54 @@ mod tests {
     }
 
     #[test]
+    fn parses_real_audio_format_fixtures_when_configured() {
+        let fixture_root = match std::env::var_os("RESONANCE_AUDIO_FIXTURES") {
+            Some(path) => PathBuf::from(path),
+            None => return,
+        };
+
+        let fixtures = [
+            "silence-44-s.mp3",
+            "silence-44-s.flac",
+            "multipagecomment.ogg",
+            "example.opus",
+            "with-id3.aif",
+            "with-id3.aiff",
+            "alac.m4a",
+            "silence-1.wma",
+            "sample.wmv",
+        ];
+
+        for filename in fixtures {
+            let path = fixture_root.join(filename);
+            let (uri, grouped_tags, _) = extract_audio_file(&path)
+                .unwrap_or_else(|error| panic!("Failed to parse {}: {}", filename, error));
+
+            assert_eq!(uri, path.to_string_lossy());
+            assert!(grouped_tags.contains_key("str_list"), "{} has no string tags", filename);
+            assert!(grouped_tags.contains_key("float"), "{} has no stream duration", filename);
+
+            match grouped_tags.get("str_list").and_then(|values| values.get("title")) {
+                Some(MapVal::List(values)) if !values.is_empty() => (),
+                _ => panic!("{} did not receive a title or fallback title", filename),
+            }
+
+            match grouped_tags.get("float").and_then(|values| values.get("duration")) {
+                Some(MapVal::Float(duration)) if *duration > 0.0 => (),
+                _ => panic!("{} has an invalid duration", filename),
+            }
+        }
+
+        let flac = extract_audio_file(&fixture_root.join("silence-44-s.flac"))
+            .expect("FLAC fixture should parse");
+        assert!(flac.2.is_some(), "FLAC embedded artwork should be extracted");
+
+        let mp4 = extract_audio_file(&fixture_root.join("covr-with-name.m4a"))
+            .expect("MP4 fixture should parse");
+        assert!(mp4.2.is_some(), "MP4 embedded artwork should be extracted");
+    }
+
+    #[test]
     fn ignores_unrecognized_extensions() {
         assert!(!is_supported_audio_file(Path::new("cover.jpg")));
         assert!(!is_supported_audio_file(Path::new("notes.txt")));
