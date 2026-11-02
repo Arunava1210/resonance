@@ -1127,17 +1127,14 @@ impl Database {
         Ok(result)
     }
 
-     // Used in model population
-    pub fn query_art(&self) -> Result<Vec<(i64, Vec<u8>)>, Box<dyn Error>> {
+     // Used in model population. Only fetch IDs here; artwork blobs are loaded
+    // individually when a view first needs to display them.
+    pub fn query_art(&self) -> Result<Vec<i64>, Box<dyn Error>> {
         let conn = self.imp().conn.borrow();
         let conn = conn.as_ref().ok_or("Connection not established")?;
 
-        let mut stmt = conn.prepare("SELECT id, data FROM cover_art;")?;
-        let rows = stmt.query_map([], |row| {
-            let id: i64 = row.get(0)?;
-            let data: Vec<u8> = row.get(1)?;
-            Ok((id, data))
-        })?;
+        let mut stmt = conn.prepare("SELECT id FROM cover_art ORDER BY id;")?;
+        let rows = stmt.query_map([], |row| row.get(0))?;
 
         let mut result = Vec::new();
         for row in rows {
@@ -2263,7 +2260,35 @@ impl Database {
              CREATE INDEX IF NOT EXISTS idx_track_artist_junction_track
                  ON Track_Artist_Junction(track_id);
              CREATE INDEX IF NOT EXISTS idx_track_cover_art_junction_track
-                 ON Track_Cover_Art_Junction(track_id);"
+                 ON Track_Cover_Art_Junction(track_id);
+             CREATE INDEX IF NOT EXISTS idx_album_genre_junction_album
+                 ON Album_Genre_Junction(album_id);
+             CREATE INDEX IF NOT EXISTS idx_track_album_junction_album
+                 ON Track_Album_Junction(album_id);
+             CREATE INDEX IF NOT EXISTS idx_track_artist_junction_artist
+                 ON Track_Artist_Junction(artist_id);
+             CREATE INDEX IF NOT EXISTS idx_track_cover_art_junction_art
+                 ON Track_Cover_Art_Junction(cover_art_id);
+             CREATE INDEX IF NOT EXISTS idx_album_cover_art_junction_art
+                 ON Album_Cover_Art_Junction(cover_art_id);
+             CREATE INDEX IF NOT EXISTS idx_artist_discog_image_junction_image
+                 ON Artist_Discog_Artist_Image_Junction(image_id);
+             CREATE INDEX IF NOT EXISTS idx_folder_file_junction_folder
+                 ON Folder_File_Junction(folder_id);
+             CREATE INDEX IF NOT EXISTS idx_folder_file_junction_file
+                 ON Folder_File_Junction(file_id);
+             CREATE INDEX IF NOT EXISTS idx_track_folder_junction_folder
+                 ON Track_Folder_Junction(folder_id);
+             CREATE INDEX IF NOT EXISTS idx_track_folder_junction_track
+                 ON Track_Folder_Junction(track_id);
+             CREATE INDEX IF NOT EXISTS idx_playlist_entry_track_junction_entry
+                 ON Playlist_Entry_Track_Junction(playlist_entry_id);
+             CREATE INDEX IF NOT EXISTS idx_playlist_entry_track_junction_track
+                 ON Playlist_Entry_Track_Junction(track_id);
+             CREATE INDEX IF NOT EXISTS idx_playlist_entry_playlist_junction_playlist
+                 ON Playlist_Entry_Playlist_Junction(playlist_id);
+             CREATE INDEX IF NOT EXISTS idx_playlist_entry_playlist_junction_entry
+                 ON Playlist_Entry_Playlist_Junction(playlist_entry_id);"
         )?;
 
         Ok(())
