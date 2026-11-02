@@ -9,7 +9,7 @@ use gtk::subclass::prelude::*;
 use gtk::{glib, gio};
 
 use std::{cell::RefCell, cell::Cell, rc::Rc, collections::{HashSet, HashMap}};
-use regex::Regex;
+use super::track::sort_value;
 
 use super::track::Track;
 
@@ -68,16 +68,11 @@ impl Album {
     pub fn load_info(&self, id: i64, title: String, album_artist: String, artist_id: i64, date: String, genre: String) {
         let imp = self.imp();
         
-        let re = Regex::new(r"^(the|a|an)\s+").unwrap();
-        
-        let lowercase_title = title.to_lowercase();
-        let stripped_title: std::borrow::Cow<str> = re.replace(&lowercase_title, "");
+        let stripped_title = sort_value(&title);
+        let stripped_artist = sort_value(&album_artist);
 
-        let lowercase_artist= album_artist.to_lowercase();
-        let stripped_artist = re.replace(&lowercase_artist, "");
-
-        imp.sort_title.replace(format!("{}", stripped_title));
-        imp.sort_artist.replace(format!("{}", stripped_artist));
+        imp.sort_title.replace(stripped_title.clone());
+        imp.sort_artist.replace(stripped_artist.clone());
         imp.sort_string.replace(format!("{} {}", stripped_title, stripped_artist));
         imp.search_string.replace(format!("{} {}", title, album_artist));
 

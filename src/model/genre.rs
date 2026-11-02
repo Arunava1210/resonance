@@ -8,7 +8,7 @@ use adw::subclass::prelude::*;
 use gtk::glib;
 
 use std::{cell::Cell, cell::RefCell, rc::Rc};
-use regex::Regex;
+use super::track::sort_value;
 
 use super::album::Album;
 
@@ -55,10 +55,7 @@ impl Genre {
 
         imp.id.replace(id);
 
-        let re = Regex::new(r"^(the|a|an)\s+").unwrap();
-        let lowercase_name = name.to_lowercase();
-        let stripped_name: std::borrow::Cow<str> = re.replace(&lowercase_name, "");
-        imp.sort_name.replace(format!("{}", stripped_name));
+        imp.sort_name.replace(sort_value(&name));
 
         imp.name.replace(name);
     }

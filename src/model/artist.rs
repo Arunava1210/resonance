@@ -7,7 +7,7 @@
 use gtk::{subclass::prelude::*, glib};
 
 use std::{cell::Cell, cell::RefCell, rc::Rc};
-use regex::Regex;
+use super::track::sort_value;
 
 use super::album::Album;
 
@@ -58,11 +58,7 @@ impl Artist {
         imp.id.set(id);
         imp.image_id.set(image_optional);
 
-        let re = Regex::new(r"^(the|a|an)\s+").unwrap();
-        
-        let lowercase_name = name.to_lowercase();
-        let stripped_name: std::borrow::Cow<str> = re.replace(&lowercase_name, "");
-        imp.sort_name.replace(format!("{}", stripped_name));
+        imp.sort_name.replace(sort_value(&name));
         
         imp.name.replace(name);
     }

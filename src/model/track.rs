@@ -12,7 +12,7 @@ use std::{cell::Cell, cell::RefCell};
 
 // Avoid invoking the regular-expression engine for every title, album and
 // artist while constructing large track models.
-fn sort_value(value: &str) -> String {
+pub(crate) fn sort_value(value: &str) -> String {
     let lowercase = value.to_lowercase();
 
     for article in ["the", "a", "an"] {
