@@ -258,7 +258,8 @@ impl Importer {
             let mut disc_number_tag = None;
             let mut track_number_tag = None;
             let mut filetype_tag = String::new();
-\n            
+
+
             for (type_key, type_map) in track_map {
 
                 match type_key.as_str() {
