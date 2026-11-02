@@ -7,7 +7,7 @@
  */
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     sync::{
@@ -29,11 +29,11 @@ use audex::{
 
 use crate::{
     database::DatabaseAction,
-    importer::MapVal,
+    importer::{share_artwork, MapVal},
 };
 
 type TrackTags = HashMap<String, HashMap<String, HashMap<String, MapVal>>>;
-type Artwork = HashMap<String, Vec<u8>>;
+type Artwork = HashMap<String, Arc<Vec<u8>>>;
 
 const SUPPORTED_EXTENSIONS: &[&str] = &[
     "mp3", "aif", "aiff", "ogg", "opus", "flac", "mp4", "m4a", "asf", "wma", "wmv",
@@ -69,7 +69,8 @@ pub fn scan_folder(
     let (result_sender, result_receiver) = mpsc::channel();
 
     let mut tags = TrackTags::with_capacity(total);
-    let mut artwork = Artwork::new();
+    let mut artwork = Artwork::with_capacity(total);
+    let mut artwork_cache = HashSet::new();
 
     thread::scope(|scope| {
         for _ in 0..worker_count {
@@ -108,7 +109,7 @@ pub fn scan_folder(
                 Ok((uri, track_tags, cover_art)) => {
                     tags.insert(uri.clone(), track_tags);
                     if let Some(cover_art) = cover_art {
-                        artwork.insert(uri, cover_art);
+                        artwork.insert(uri, share_artwork(cover_art, &mut artwork_cache));
                     }
                 }
                 Err(error) => {

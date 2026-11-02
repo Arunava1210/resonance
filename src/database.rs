@@ -11,7 +11,8 @@ use gtk_macros::send;
 
 use std::{
     cell::{Cell, RefCell}, 
-    collections::{HashMap, HashSet}, 
+    collections::{HashMap, HashSet},
+    sync::Arc,
     time::Duration, 
     error::Error, 
     path::PathBuf, 
@@ -37,7 +38,7 @@ use super::util;
 pub enum DatabaseAction {
     TryLoadingDataBase,
     TryAddMusicFolder(PathBuf),
-    ConstructFromTags((String, HashMap<String, HashMap<String, HashMap<String, MapVal>>>, HashMap<String, Vec<u8>>)),
+    ConstructFromTags((String, HashMap<String, HashMap<String, HashMap<String, MapVal>>>, HashMap<String, Arc<Vec<u8>>>)),
     ImportFinished((String, Vec<(i64, String)>)),
     ImportFailed(String),
     AddArtistImages(Vec<(i64, Option<(String, Vec<u8>)>)>),
@@ -571,7 +572,7 @@ impl Database {
         &self,
         folder: String,
         tags: HashMap<String, HashMap<String, HashMap<String, MapVal>>>,
-        bytes: HashMap<String, Vec<u8>>,
+        bytes: HashMap<String, Arc<Vec<u8>>>,
     ) {
         let database_path = self.database_location();
         let sender = self.imp().db_sender.clone();

@@ -10,7 +10,7 @@ use gtk_macros::send;
 
 #[cfg(all(feature = "python-importer", not(feature = "native-importer")))]
 use std::cell::RefCell;
-use std::{collections::HashMap, error::Error, fs};
+use std::{collections::{HashMap, HashSet}, error::Error, fs, sync::Arc};
 #[cfg(all(feature = "python-importer", not(feature = "native-importer")))]
 use std::fmt;
 use log::{debug, error};
@@ -81,6 +81,39 @@ pub enum MapVal {
     Float(f32),
     Int(i32),
     Bytes(Vec<u8>),
+}
+
+/// Share identical embedded artwork buffers between the tracks that use them.
+pub(crate) fn share_artwork(
+    data: Vec<u8>,
+    cache: &mut HashSet<Arc<Vec<u8>>>,
+) -> Arc<Vec<u8>> {
+    let candidate = Arc::new(data);
+    match cache.get(&candidate) {
+        Some(existing) => Arc::clone(existing),
+        None => {
+            cache.insert(Arc::clone(&candidate));
+            candidate
+        }
+    }
+}
+
+#[cfg(test)]
+mod artwork_sharing_tests {
+    use super::share_artwork;
+    use std::{collections::HashSet, sync::Arc};
+
+    #[test]
+    fn identical_artwork_reuses_the_same_allocation() {
+        let mut cache = HashSet::new();
+        let first = share_artwork(vec![1, 2, 3, 4], &mut cache);
+        let duplicate = share_artwork(vec![1, 2, 3, 4], &mut cache);
+        let different = share_artwork(vec![1, 2, 3, 5], &mut cache);
+
+        assert!(Arc::ptr_eq(&first, &duplicate));
+        assert!(!Arc::ptr_eq(&first, &different));
+        assert_eq!(cache.len(), 2);
+    }
 }
 
 #[cfg(all(feature = "python-importer", not(feature = "native-importer")))]
@@ -202,15 +235,19 @@ impl Importer {
                     return Err(Box::new(ImportError("Tag Map Empty".into())));
                 }
 
-                let mut vec_byte_map = HashMap::with_capacity(bytes_map.len());
+                let mut artwork_cache = HashSet::new();
+                let mut shared_artwork = HashMap::with_capacity(bytes_map.len());
                 for (uri, bytes) in bytes_map.iter() {
-                    vec_byte_map.insert(uri.clone(), bytes.to_vec());
+                    shared_artwork.insert(
+                        uri.clone(),
+                        share_artwork(bytes.to_vec(), &mut artwork_cache),
+                    );
                 }
 
                 send!(sender, DatabaseAction::ConstructFromTags((
                     folder_path,
                     tags,
-                    vec_byte_map,
+                    shared_artwork,
                 )));
                 Ok(())
             });
@@ -226,7 +263,7 @@ impl Importer {
         tx: &Transaction,
         folder_uri: String,
         tags: HashMap<String, HashMap<String, HashMap<String, MapVal>>>,
-        cover_art_map: HashMap<String, Vec<u8>>,
+        cover_art_map: HashMap<String, Arc<Vec<u8>>>,
         sender: Sender<DatabaseAction>,
     ) -> Result<(), Box<dyn Error>> {
         debug!("Building database from tags");
@@ -238,7 +275,7 @@ impl Importer {
         let mut added_genres: HashMap<String, i64> = HashMap::new();
         let mut added_artists: HashMap<String, i64> = HashMap::new();
         let mut added_albums: HashMap<String, i64> = HashMap::new();
-        let mut added_art: HashMap<&[u8], i64> = HashMap::new();
+        let mut added_art: HashMap<usize, i64> = HashMap::new();
         let mut album_art: HashMap<i64, AlbumArtCounter> = HashMap::new();
 
         // Count existing unknown-album tracks once; use an in-memory counter as
@@ -399,10 +436,10 @@ impl Importer {
 
             // add cover art to the database table
             let cover_art_id = if let Some(bytes) = cover_art {
-                let bytes = bytes.as_slice();
-                match added_art.get(bytes) {
+                let art_key = Arc::as_ptr(bytes) as usize;
+                match added_art.get(&art_key) {
                     Some(id) => Some(*id),
-                    None => Some(Database::add_cover_art(tx, bytes)?),
+                    None => Some(Database::add_cover_art(tx, bytes.as_slice())?),
                 }
             } else {
                 None
@@ -468,7 +505,7 @@ impl Importer {
 
             if let Some(data) = cover_art {
                 if let Some(art_id) = cover_art_id {
-                    added_art.insert(data, art_id);
+                    added_art.insert(Arc::as_ptr(data) as usize, art_id);
 
                     // Update an album's selected cover in expected O(1)
                     // time per track, instead of rescanning every previous
