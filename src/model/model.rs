@@ -240,7 +240,7 @@ impl Model {
             imp.artists.replace(Some(HashMap::new()));
             return Err(Box::new(ModelError("Artist Query Empty".into())));
         }
-        let mut image_map = HashMap::new();
+        let mut image_map = HashMap::with_capacity(list.len());
         for (id, url, data) in list {
             let image = Rc::new(ArtistImage::new(id, url, data));
             image_map.insert(id, image);
@@ -258,7 +258,7 @@ impl Model {
             imp.genres.replace(Some(HashMap::new()));
             return Err(Box::new(ModelError("Genre Query Empty".into())));
         }
-        let mut genre_map = HashMap::new();
+        let mut genre_map = HashMap::with_capacity(list.len());
         for (id, name, albums_optional) in list {
             let genre = Rc::new(Genre::new(name.clone(), id.clone()));
             
@@ -287,7 +287,7 @@ impl Model {
             imp.artists.replace(Some(HashMap::new()));
             return Err(Box::new(ModelError("Artists Query Empty".into())));
         }
-        let mut artist_map = HashMap::new();
+        let mut artist_map = HashMap::with_capacity(list.len());
         for (id, name, image_optional, albums_optional) in list {
             let artist = Rc::new(Artist::new(name, id, image_optional));
 
@@ -317,7 +317,7 @@ impl Model {
             imp.albums.replace(Some(HashMap::new()));
             return Err(Box::new(ModelError("Album Query Empty".into())));
         }
-        let mut album_map = HashMap::new();
+        let mut album_map = HashMap::with_capacity(list.len());
         for (id, title, album_artist, date, genre, cover_art_option, artist_id) in list
         {
             let album = Rc::new(Album::new(id, title, album_artist, artist_id, date, genre));
@@ -338,7 +338,7 @@ impl Model {
             imp.tracks.replace(Some(HashMap::new()));
             return Err(Box::new(ModelError("Track Query Empty".into())));
         }
-        let mut track_map = HashMap::new();
+        let mut track_map = HashMap::with_capacity(list.len());
         for (
             id,
             title,
@@ -704,4 +704,36 @@ impl Model {
         glib::Continue(true)
     }
 
+}
+
+
+#[cfg(test)]
+mod collection_iteration_tests {
+    use super::visit_collection;
+    use std::{cell::RefCell, collections::HashMap, rc::Rc};
+
+    #[test]
+    fn visits_each_item_without_requiring_a_clone_of_the_map() {
+        let collection = RefCell::new(Some(HashMap::from([
+            (1, Rc::new("one".to_string())),
+            (2, Rc::new("two".to_string())),
+        ])));
+        let mut seen = Vec::new();
+
+        assert!(visit_collection(&collection, |item| {
+            seen.push(item.as_str().to_string());
+        }));
+        seen.sort();
+
+        assert_eq!(seen, vec!["one".to_string(), "two".to_string()]);
+    }
+
+    #[test]
+    fn returns_false_for_unloaded_and_empty_collections() {
+        let unloaded: RefCell<Option<HashMap<i64, Rc<String>>>> = RefCell::new(None);
+        let empty = RefCell::new(Some(HashMap::new()));
+
+        assert!(!visit_collection(&unloaded, |_| {}));
+        assert!(!visit_collection(&empty, |_| {}));
+    }
 }
