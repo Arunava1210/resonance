@@ -46,6 +46,7 @@ jobs:
             libssl-dev \
             libxml2-utils \
             librsvg2-dev \
+            librsvg2-bin \
             libsqlite3-dev \
             meson \
             ninja-build \
@@ -60,6 +61,7 @@ jobs:
             gstreamer1.0-plugins-ugly \
             gstreamer1.0-tools \
             xvfb \
+            xauth \
             dbus-daemon
           rm -rf /var/lib/apt/lists/*
 
@@ -77,6 +79,9 @@ jobs:
           APPDIR="$PWD/AppDir"
           mkdir -p "$APPDIR"
           DESTDIR="$APPDIR" meson install -C build
+          rsvg-convert -w 256 -h 256 \
+            "$APPDIR/usr/share/icons/hicolor/scalable/apps/io.github.nate_xyz.Resonance.svg" \
+            -o "$APPDIR/io.github.nate_xyz.Resonance.png"
 
       - name: Download linuxdeploy and AppImage plugins
         shell: bash
