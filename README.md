@@ -27,6 +27,24 @@ Features:
 <br><br>
 
 
+AppImage (x86_64)
+-----------------
+
+A portable x86_64 AppImage is built automatically for the `rust-native-performance` branch.
+Open the [AppImage workflow runs](https://github.com/Arunava1210/resonance/actions/workflows/appimage.yml),
+select the latest successful run, and download the `Resonance-x86_64.AppImage` artifact.
+
+Then make it executable and launch it:
+
+```sh
+chmod +x Resonance-x86_64.AppImage
+./Resonance-x86_64.AppImage
+```
+
+The AppImage bundles the application, GTK/Libadwaita runtime libraries and GStreamer
+plugins. It is built on Debian 12 and therefore requires an x86_64 Linux system with
+glibc 2.36 or newer. The host still provides the graphics driver and audio device access.
+
 Flatpak
 --------------
 

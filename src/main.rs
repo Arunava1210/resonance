@@ -27,7 +27,7 @@ use config::{GETTEXT_PACKAGE, LOCALEDIR, PKGDATADIR};
 use gettextrs::{bind_textdomain_codeset, bindtextdomain, textdomain};
 use gtk::{gio, glib, prelude::*};
 
-use std::{env, process};
+use std::{env, path::PathBuf, process};
 use log::{debug, error, LevelFilter};
 
 fn main() -> glib::ExitCode  {
@@ -40,8 +40,17 @@ fn main() -> glib::ExitCode  {
         .init();
 
     env::set_var("RUST_BACKTRACE", "1");
+    // Resolve bundled resources relative to the AppImage when running from one.
+    // Normal system installations continue to use Meson's configured paths.
+    let app_dir = env::var_os("APPDIR").map(PathBuf::from);
+    let locale_dir = app_dir
+        .as_ref()
+        .map(|dir| dir.join("usr/share/locale"))
+        .unwrap_or_else(|| PathBuf::from(LOCALEDIR));
+
     // Set up gettext translations
-    bindtextdomain(GETTEXT_PACKAGE, LOCALEDIR).expect("Unable to bind the text domain");
+    bindtextdomain(GETTEXT_PACKAGE, locale_dir.to_string_lossy().as_ref())
+        .expect("Unable to bind the text domain");
     bind_textdomain_codeset(GETTEXT_PACKAGE, "UTF-8")
         .expect("Unable to set the text domain encoding");
     textdomain(GETTEXT_PACKAGE).expect("Unable to switch to the text domain");
@@ -49,8 +58,14 @@ fn main() -> glib::ExitCode  {
     // Load resources
     debug!("Loading resources");
     let resources = match env::var("MESON_DEVENV") {
-        Err(_) => gio::Resource::load(PKGDATADIR.to_owned() + "/resonance.gresource")
-            .expect("Unable to find resonance.gresource"),
+        Err(_) => {
+            let resource_path = app_dir
+                .as_ref()
+                .map(|dir| dir.join("usr/share/resonance/resonance.gresource"))
+                .unwrap_or_else(|| PathBuf::from(PKGDATADIR).join("resonance.gresource"));
+            gio::Resource::load(resource_path)
+                .expect("Unable to find resonance.gresource")
+        },
         Ok(_) => match env::current_exe() {
             Ok(path) => {
                 let mut resource_path = path;
