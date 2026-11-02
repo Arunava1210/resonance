@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
@@ -60,21 +60,39 @@ jobs:
       - name: Check optional legacy Python importer
         run: cargo check --locked --no-default-features --features python-importer
 
-      - name: Commit generated lockfile on the development branch
-        if: github.event_name == 'push' && github.ref_name == 'rust-native-performance'
+      - name: Verify Flatpak vendored Cargo dependencies
         run: |
-          # Another source commit may land while this job is building. Move
-          # the commit base to the latest branch without discarding Cargo's
-          # generated lockfile, then commit only Cargo.lock.
-          git fetch origin "${GITHUB_REF_NAME}"
-          git reset --mixed "origin/${GITHUB_REF_NAME}"
-          if ! git diff --quiet -- Cargo.lock; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add Cargo.lock
-            git commit -m "Update Cargo.lock for native metadata importer"
-            git push origin "HEAD:${GITHUB_REF_NAME}"
-          fi
+          python - <<'PY'
+          import json
+          import tomllib
+
+          with open("Cargo.lock", "rb") as f:
+              lock = tomllib.load(f)
+          with open("flatpak/cargo-sources.json", encoding="utf-8") as f:
+              sources = json.load(f)
+
+          archives = {
+              item["dest"]: item["sha256"]
+              for item in sources
+              if item.get("type") == "archive"
+          }
+          missing = []
+          for package in lock["package"]:
+              if not package.get("source", "").startswith("registry+"):
+                  continue
+              destination = "cargo/vendor/{}-{}".format(
+                  package["name"], package["version"]
+              )
+              if archives.get(destination) != package.get("checksum"):
+                  missing.append(destination)
+
+          if missing:
+              raise SystemExit(
+                  "Flatpak Cargo vendor manifest is missing or stale: "
+                  + ", ".join(missing)
+              )
+          print("Flatpak vendor manifest covers all locked registry crates.")
+          PY
 
       - name: Fetch small real-audio parser fixtures
         run: |
