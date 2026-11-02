@@ -38,6 +38,8 @@ pub enum DatabaseAction {
     TryLoadingDataBase,
     TryAddMusicFolder(PathBuf),
     ConstructFromTags((String, HashMap<String, HashMap<String, HashMap<String, MapVal>>>, HashMap<String, Vec<u8>>)),
+    ImportFinished((String, Vec<(i64, String)>)),
+    ImportFailed(String),
     AddArtistImages(Vec<(i64, Option<(String, Vec<u8>)>)>),
     AddArtistImage((i64, Option<(String, Vec<u8>)>)),
     AddArtistImagesDone(u32),
@@ -186,9 +188,19 @@ impl Database {
     fn process_action(&self, action: DatabaseAction) -> glib::Continue {
         match action {
             DatabaseAction::ConstructFromTags((folder, tags, cover_art_bytes)) => {
-                match self.construct_from_tags(folder, tags, cover_art_bytes) {
-                    Ok(_) => (),
-                    Err(e) => error!("Unable to contrust database from tags: {}", e),
+                self.import_tags_in_background(folder, tags, cover_art_bytes);
+            },
+            DatabaseAction::ImportFinished((folder, new_artists)) => {
+                if let Err(error) = self.finish_import(folder, new_artists) {
+                    error!("Unable to finish music import: {}", error);
+                    add_error_toast(i18n("Unable to add music folder."));
+                }
+            },
+            DatabaseAction::ImportFailed(message) => {
+                error!("Unable to construct database from tags: {}", message);
+                add_error_toast(i18n("Unable to add music folder."));
+                if let Some(window) = util::window() {
+                    window.set_import_message("Import failed.");
                 }
             },
             // Actions arrive on the GLib main context, so GTK widgets are only
@@ -478,6 +490,9 @@ impl Database {
             }
         };
 
+        conn.busy_timeout(Duration::from_secs(30))?;
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+
         let result = conn.query_row("SELECT sqlite_source_id()", params![], |row| row.get(0));
         
         debug!("sqlite_source_id: {}", result.unwrap_or("Error".to_string()));
@@ -549,39 +564,73 @@ impl Database {
         Ok(())
     }
 
-    //Called after importer extracts tags with mutagen
-    fn construct_from_tags(&self, folder: String, tags: HashMap<String, HashMap<String, HashMap<String, MapVal>>>, bytes: HashMap<String, Vec<u8>>)  -> Result<(), Box<dyn Error>>{
+    // Keep the SQLite import off the GTK thread too. The worker uses its own
+    // connection; completion is sent back to the main context for settings and
+    // model updates.
+    fn import_tags_in_background(
+        &self,
+        folder: String,
+        tags: HashMap<String, HashMap<String, HashMap<String, MapVal>>>,
+        bytes: HashMap<String, Vec<u8>>,
+    ) {
+        let database_path = self.database_location();
+        let sender = self.imp().db_sender.clone();
+
+        thread::spawn(move || {
+            let result = (|| -> Result<Vec<(i64, String)>, Box<dyn Error>> {
+                let mut connection = Connection::open_with_flags(
+                    database_path,
+                    rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
+                )?;
+                connection.busy_timeout(Duration::from_secs(30))?;
+                connection.execute("PRAGMA foreign_keys = ON", params![])?;
+
+                let tx = connection.transaction()?;
+                Importer::build_database_from_tags(
+                    &tx,
+                    folder.clone(),
+                    tags,
+                    bytes,
+                    sender.clone(),
+                )?;
+                let new_artists = Self::new_artists(&tx)?;
+                tx.commit()?;
+
+                Ok(new_artists)
+            })();
+
+            match result {
+                Ok(new_artists) => {
+                    let _ = sender.send(DatabaseAction::ImportFinished((folder, new_artists)));
+                }
+                Err(error) => {
+                    let _ = sender.send(DatabaseAction::ImportFailed(error.to_string()));
+                }
+            }
+        });
+    }
+
+    // Run UI/settings work after the worker transaction has committed.
+    fn finish_import(
+        &self,
+        folder: String,
+        new_artists: Vec<(i64, String)>,
+    ) -> Result<(), Box<dyn Error>> {
         let imp = self.imp();
-        let new_artists = {
-            let mut conn = imp.conn.borrow_mut();
-            let conn = conn.as_mut().ok_or("Connection not established")?;
-    
-            let tx = conn.transaction()?;
-            self.importer().build_database_from_tags(&tx, folder.clone(), tags, bytes)?;
-            let new_artists = self.new_artists(&tx)?;
-            
-            tx.commit()?;
 
-            new_artists
-        };
-
-        //UPDATE SETTINGS
-        let mut folders = imp.folders.borrow_mut().clone();
+        let mut folders = imp.folders.borrow().clone();
         folders.insert(folder);
         let music_folders = folders.into_iter().collect::<Vec<String>>();
         imp.settings.set_strv("music-folders", music_folders.as_slice())?;
 
-
-        //UPDATE ARTISTS ART
         if !new_artists.is_empty() {
             debug!("Adding new artists ...");
-
             let sender = imp.db_sender.clone();
 
             thread::spawn(move || {
                 match fetch_artist_images_bulk(new_artists, sender.clone()) {
                     Ok(()) => debug!("Added all artist images!"),
-                    Err(e) => error!("Adding artist images error: {}", e),
+                    Err(error) => error!("Adding artist images error: {}", error),
                 }
             });
         }
@@ -590,10 +639,10 @@ impl Database {
             let end = chrono::offset::Utc::now();
             let duration = end.signed_duration_since(start);
             if duration.num_seconds() < 60 {
-                debug!("Import time elapsed: {}", duration.num_seconds())
+                debug!("Import time elapsed: {}", duration.num_seconds());
             } else {
-                debug!("Import elapsed: {} minutes", duration.num_minutes())
-            }   
+                debug!("Import elapsed: {} minutes", duration.num_minutes());
+            }
         }
 
         Ok(())
@@ -606,7 +655,7 @@ impl Database {
         let conn = conn.as_mut().ok_or("Connection not established")?;
         let tx = conn.transaction()?;
 
-        let new_artists = self.new_artists(&tx)?;
+        let new_artists = Self::new_artists(&tx)?;
         tx.commit()?;
 
         //UPDATE ARTISTS ART
@@ -628,7 +677,7 @@ impl Database {
         Ok(())
     }
 
-    fn new_artists(&self, tx: &Transaction) -> Result<Vec<(i64, String)>, Box<dyn Error>> {
+    fn new_artists(tx: &Transaction) -> Result<Vec<(i64, String)>, Box<dyn Error>> {
         let mut stmt = tx.prepare_cached("SELECT * FROM Artists WHERE Artists.image_fetched=0 AND NOT EXISTS(SELECT 1 FROM Artist_Discog_Artist_Image_Junction WHERE Artists.id = Artist_Discog_Artist_Image_Junction.artist_id);")?;
         let rows = stmt.query_map([], |row| {
             let id: i64 = row.get(0)?;
@@ -649,50 +698,50 @@ impl Database {
     ADDING VALUES TO TABLES
     */
 
-    pub fn add_folder(&self, tx: &Transaction, uri: String) -> Result<i64, Box<dyn Error>> {
+    pub(super) fn add_folder(tx: &Transaction, uri: String) -> Result<i64, Box<dyn Error>> {
         let mut stmt = tx.prepare_cached("INSERT INTO Music_Folders (uri) VALUES ( ? );")?;
         stmt.execute(params![uri])?;
         Ok(tx.last_insert_rowid())
     }
 
-    pub fn add_genre(&self, tx: &Transaction, name: String) -> Result<i64, Box<dyn Error>> {
+    pub(super) fn add_genre(tx: &Transaction, name: String) -> Result<i64, Box<dyn Error>> {
         let mut stmt = tx.prepare_cached("INSERT INTO Genres (name) VALUES ( ? );")?;
         stmt.execute(params![name])?;
         Ok(tx.last_insert_rowid())
     }
 
-    pub fn add_artist(&self, tx: &Transaction, name: String) -> Result<i64, Box<dyn Error>> {
+    pub(super) fn add_artist(tx: &Transaction, name: String) -> Result<i64, Box<dyn Error>> {
         let mut stmt = tx.prepare_cached("INSERT INTO Artists ( name, image_fetched ) VALUES ( ?, ? );")?;
         stmt.execute(params![name, 0])?;
         Ok(tx.last_insert_rowid())
     }
 
-    pub fn add_cover_art(&self, tx: &Transaction, data: &[u8]) -> Result<i64, Box<dyn Error>> {
+    pub(super) fn add_cover_art(tx: &Transaction, data: &[u8]) -> Result<i64, Box<dyn Error>> {
         let mut stmt = tx.prepare_cached("INSERT INTO Cover_Art (data, thing) VALUES ( ?, ? );")?;
         stmt.execute(params![data, 0])?;
         Ok(tx.last_insert_rowid())
     }
 
     //ADD ALBUM
-    pub fn add_album_full(&self, tx: &Transaction, 
+    pub(super) fn add_album_full(tx: &Transaction, 
         title: String, artist: String, date: String, genre: String,
         cover_art_id: Option<i64>, album_artist_id: i64, genre_id: Option<i64>) -> Result<i64, Box<dyn Error>> {
         
-        let album_id = self.add_album(&tx, title, artist, date, genre)?;
-        self.add_album_artist_junction(&tx, album_id, album_artist_id)?;
+        let album_id = Self::add_album(tx, title, artist, date, genre)?;
+        Self::add_album_artist_junction(tx, album_id, album_artist_id)?;
 
         if let Some(id) = cover_art_id {
-            self.add_album_cover_art_junction(&tx, album_id, id)?;
+            Self::add_album_cover_art_junction(tx, album_id, id)?;
         }
 
         if let Some(id) = genre_id {
-            self.add_album_genre_junction(&tx, album_id, id)?;
+            Self::add_album_genre_junction(tx, album_id, id)?;
         }
 
         Ok(album_id)
     }
 
-    fn add_album(&self, tx: &Transaction, 
+    fn add_album(tx: &Transaction, 
         title: String, artist: String, date: String, genre: String) -> Result<i64, Box<dyn Error>> {
         let mut stmt = tx.prepare_cached("INSERT INTO Albums (title, artist, date, genre) VALUES ( ?, ?, ?, ? );")?;
         stmt.execute(params![
@@ -701,21 +750,21 @@ impl Database {
         Ok(tx.last_insert_rowid())
     }
 
-    fn add_album_artist_junction(&self, tx: &Transaction, 
+    fn add_album_artist_junction(tx: &Transaction, 
         album_id: i64, artist_id: i64) -> Result<i64, Box<dyn Error>> {
         let mut stmt = tx.prepare_cached("INSERT INTO Album_Artist_Junction (album_id, artist_id) VALUES ( ?, ? );")?;
         stmt.execute(params![album_id, artist_id])?;
         Ok(tx.last_insert_rowid())
     }
 
-    fn add_album_cover_art_junction(&self, tx: &Transaction, 
+    fn add_album_cover_art_junction(tx: &Transaction, 
         album_id: i64, cover_art_id: i64) -> Result<i64, Box<dyn Error>> {
         let mut stmt = tx.prepare_cached("INSERT INTO Album_Cover_Art_Junction (album_id, cover_art_id) VALUES ( ?, ? );")?;
         stmt.execute(params![album_id, cover_art_id])?;
         Ok(tx.last_insert_rowid())
     }
 
-    fn add_album_genre_junction(&self, tx: &Transaction, 
+    fn add_album_genre_junction(tx: &Transaction, 
         album_id: i64, genre_id: i64) -> Result<i64, Box<dyn Error>> {
         let mut stmt = tx.prepare_cached("INSERT INTO Album_Genre_Junction (album_id, genre_id) VALUES ( ?, ? );")?;
         stmt.execute(params![
@@ -726,28 +775,28 @@ impl Database {
 
     //ADD TRACK
 
-    pub fn add_track_full(&self, tx: &Transaction, 
+    pub(super) fn add_track_full(tx: &Transaction, 
         title: String, filetype: String, album_name: String, album_artist: String, date: String, 
         duration: f32, track_number: u32, disc_number: u32,  
         album_id: i64, album_artist_id: i64, cover_art_id: Option<i64>,
         file_uri: String, last_modified: DateTime<Utc>, folder_id: i64, 
     ) -> Result<i64, Box<dyn Error>> {
         
-        let file_id = self.add_file_uri(&tx,file_uri, last_modified, folder_id)?;
-        let track_id = self.add_track(&tx, title, filetype, album_name, date, duration, track_number, disc_number, album_artist, file_id)?;
+        let file_id = Self::add_file_uri(tx, file_uri, last_modified, folder_id)?;
+        let track_id = Self::add_track(tx, title, filetype, album_name, date, duration, track_number, disc_number, album_artist, file_id)?;
         
-        self.add_track_album_junction(&tx, track_id, album_id)?;
-        self.add_track_artist_junction(&tx, track_id, album_artist_id)?;
-        self.add_track_folder_junction(&tx, track_id, folder_id)?;
+        Self::add_track_album_junction(tx, track_id, album_id)?;
+        Self::add_track_artist_junction(tx, track_id, album_artist_id)?;
+        Self::add_track_folder_junction(tx, track_id, folder_id)?;
 
         if let Some(id) = cover_art_id {
-            self.add_track_cover_art_junction(&tx, track_id, id)?;
+            Self::add_track_cover_art_junction(tx, track_id, id)?;
         }
 
         Ok(track_id)
     }
 
-    fn add_file_uri(&self, tx: &Transaction, file_uri: String, last_modified: DateTime<Utc>, folder_id: i64) -> Result<i64, Box<dyn Error>> {
+    fn add_file_uri(tx: &Transaction, file_uri: String, last_modified: DateTime<Utc>, folder_id: i64) -> Result<i64, Box<dyn Error>> {
         let mut stmt = tx.prepare_cached("INSERT INTO File_URIs (uri, last_modified) VALUES ( ?, ? );")?;
         stmt.execute(params![file_uri, last_modified.timestamp()])?;
         let file_id = tx.last_insert_rowid();
@@ -758,7 +807,7 @@ impl Database {
         Ok(file_id)
     }
 
-    fn add_track(&self, tx: &Transaction, 
+    fn add_track(tx: &Transaction, 
         title: String, filetype: String, album_name: String, date: String, duration: f32, 
         track_number: u32, disc_number: u32,  album_artist: String,  file_uri_id: i64) -> Result<i64, Box<dyn Error>> {
         let mut stmt = tx.prepare_cached("INSERT INTO Tracks (title, filetype, album_name, date, duration, track_number, disc_number, album_artist, file_uri_id) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ? );")?;
@@ -766,28 +815,28 @@ impl Database {
         Ok(tx.last_insert_rowid())
     }
 
-    fn add_track_folder_junction(&self, tx: &Transaction, 
+    fn add_track_folder_junction(tx: &Transaction, 
         track_id: i64, folder_id: i64) -> Result<i64, Box<dyn Error>> {
         let mut stmt = tx.prepare_cached("INSERT INTO Track_Folder_Junction (track_id, folder_id) VALUES ( ?, ? );")?;
         stmt.execute(params![track_id, folder_id])?;
         Ok(tx.last_insert_rowid())
     }
 
-    fn add_track_album_junction(&self, tx: &Transaction, 
+    fn add_track_album_junction(tx: &Transaction, 
         track_id: i64, album_id: i64) -> Result<i64, Box<dyn Error>> {
         let mut stmt = tx.prepare_cached("INSERT INTO Track_Album_Junction (track_id, album_id) VALUES ( ?, ? );")?;
         stmt.execute(params![track_id, album_id])?;
         Ok(tx.last_insert_rowid())
     }
 
-    fn add_track_artist_junction(&self, tx: &Transaction, 
+    fn add_track_artist_junction(tx: &Transaction, 
         track_id: i64, artist_id: i64) -> Result<i64, Box<dyn Error>> {
         let mut stmt = tx.prepare_cached("INSERT INTO Track_Artist_Junction (track_id, artist_id) VALUES ( ?, ? );")?;
         stmt.execute(params![track_id, artist_id])?;
         Ok(tx.last_insert_rowid())
     }
 
-    fn add_track_cover_art_junction(&self, tx: &Transaction, 
+    fn add_track_cover_art_junction(tx: &Transaction, 
         track_id: i64, cover_art_id: i64) -> Result<i64, Box<dyn Error>> {
         let mut stmt = tx.prepare_cached("INSERT INTO Track_Cover_Art_Junction (track_id, cover_art_id) VALUES ( ?, ? );")?;
         stmt.execute(params![track_id, cover_art_id])?;
@@ -1018,7 +1067,7 @@ impl Database {
     }
 
     // Used in the import process if a track has no track number & no album artist tags, to add to the Unknown Album
-    pub fn query_orphan_tracks(&self, tx: &Transaction) -> Result<i64, Box<dyn Error>> {
+    pub(super) fn query_orphan_tracks(tx: &Transaction) -> Result<i64, Box<dyn Error>> {
         let mut stmt = tx.prepare_cached("SELECT count( * ) FROM tracks WHERE album_name = \"Unknown Album\" AND album_artist = \"Unknown Artist\";")?;
         let count = stmt.query_row([], |row| row.get(0))?;
         Ok(count)
@@ -1459,7 +1508,7 @@ impl Database {
     // # MODIFY VALUES 
     // ######
 
-    pub fn update_album_art(&self, tx: &Transaction, album_id: i64, album_art: i64,) -> Result<(), Box<dyn Error>> {
+    pub(super) fn update_album_art(tx: &Transaction, album_id: i64, album_art: i64,) -> Result<(), Box<dyn Error>> {
         let mut stmt = tx.prepare_cached("SELECT cover_art_id FROM Album_Cover_Art_Junction WHERE album_id = (?);")?;
         let cover_art_id: Option<i64> = stmt.query_row([album_id], |row| row.get(0)).optional()?;
 
@@ -1469,7 +1518,7 @@ impl Database {
                 stmt.execute(params![album_art, album_id])?;
             }
         } else {
-            self.add_album_cover_art_junction(&tx, album_id, album_art)?;
+            Self::add_album_cover_art_junction(tx, album_id, album_art)?;
         }
 
         Ok(())

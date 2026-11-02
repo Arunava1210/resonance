@@ -55,7 +55,7 @@ mod metadata_number_tests {
     }
 }
 
-use super::database::DatabaseAction;
+use super::database::{Database, DatabaseAction};
 use super::util;
 #[cfg(all(feature = "python-importer", not(feature = "native-importer")))]
 use std::time::{Duration, Instant};
@@ -220,15 +220,17 @@ impl Importer {
         });
     }
 
-    pub fn build_database_from_tags(&self, tx: &Transaction, folder_uri: String, tags: HashMap<String, HashMap<String, HashMap<String, MapVal>>>, cover_art_map: HashMap<String, Vec<u8>>) -> Result<(), Box<dyn Error>> {
+    pub fn build_database_from_tags(
+        tx: &Transaction,
+        folder_uri: String,
+        tags: HashMap<String, HashMap<String, HashMap<String, MapVal>>>,
+        cover_art_map: HashMap<String, Vec<u8>>,
+        sender: Sender<DatabaseAction>,
+    ) -> Result<(), Box<dyn Error>> {
         debug!("Building database from tags");
-        let window = util::window();
-        let database = util::database();
-
-        if let Some(w) = window {
-            w.set_import_message("Constructing database from tags.");
-    
-        }
+        let _ = sender.send(DatabaseAction::SetImportMessage(
+            "Constructing database from tags.".to_string(),
+        ));
 
 
         let mut added_genres: HashMap<String, i64> = HashMap::new();
@@ -240,9 +242,9 @@ impl Importer {
 
         // Count existing unknown-album tracks once; use an in-memory counter as
         // new tracks are inserted instead of running COUNT(*) for every orphan.
-        let existing_orphan_tracks = database.query_orphan_tracks(&tx)? as u32;
+        let existing_orphan_tracks = Database::query_orphan_tracks(tx)? as u32;
         let mut added_orphan_tracks = 0u32;
-        let current_folder_id = database.add_folder(&tx, folder_uri)?;
+        let current_folder_id = Database::add_folder(tx, folder_uri)?;
 
         // Metadata files are extracted in parallel, but the SQLite import
         // should remain deterministic across runs. HashMap iteration order is
@@ -382,7 +384,7 @@ impl Importer {
             // add genre to the database table
             let genre_id = if !genre_tag.is_empty() {
                 if !added_genres.contains_key(&genre_tag) {
-                    Some(database.add_genre(&tx, genre_tag.clone())?)
+                    Some(Database::add_genre(tx, genre_tag.clone())?)
                 } else {
                     //debug!("Already added genre {}, retrieving from map.", genre_tag);
                     Some(added_genres[&genre_tag])
@@ -394,7 +396,7 @@ impl Importer {
             // add artists to the database table
             let artist_id = if !albumartist_tag.is_empty() {
                 if !added_artists.contains_key(&albumartist_tag) {
-                    database.add_artist(&tx, albumartist_tag.clone())?
+                    Database::add_artist(tx, albumartist_tag.clone())?
                 } else {
                     //debug!("Already added artist {}, retrieving from map.", albumartist_tag);
                     added_artists[&albumartist_tag]
@@ -411,7 +413,7 @@ impl Importer {
                     //debug!("Already added cover_art, retrieving from map.");
                     added_art.get(&bytes).cloned()
                 } else {
-                    Some(database.add_cover_art(&tx, bytes)?)
+                    Some(Database::add_cover_art(tx, bytes)?)
                 }
             } else {
                 None
@@ -419,8 +421,8 @@ impl Importer {
             
             // add albums to the database table
             let album_id = if !added_albums.contains_key(&album_key) {
-                database.add_album_full(
-                    &tx,
+                Database::add_album_full(
+                    tx,
                     album_tag.clone(),
                     artist_tag,
                     date_tag.clone(),
@@ -452,8 +454,8 @@ impl Importer {
             //     w.set_import_message(&format!("Adding: {}", uri.clone()));
             // }
 
-            let track_id =  database.add_track_full(
-                &tx,
+            let track_id =  Database::add_track_full(
+                tx,
                 title_tag,
                 filetype_tag,
                 album_tag,
@@ -489,7 +491,7 @@ impl Importer {
                         .or_default()
                         .record(art_id)
                     {
-                        database.update_album_art(&tx, album_id, selected_art_id)?;
+                        Database::update_album_art(tx, album_id, selected_art_id)?;
                     }
                 }
             }
