@@ -155,6 +155,7 @@ impl Importer {
                 }
                 Err(error) => {
                     error!("Native metadata extraction failed: {}", error);
+                    let _ = sender.send(DatabaseAction::ImportFailed(error));
                 }
             }
         });
@@ -216,6 +217,7 @@ impl Importer {
 
             if let Err(err) = from_python {
                 error!("Music metadata extraction failed: {}", err);
+                let _ = sender.send(DatabaseAction::ImportFailed(err.to_string()));
             }
         });
     }

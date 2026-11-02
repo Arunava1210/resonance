@@ -198,6 +198,7 @@ impl Database {
             },
             DatabaseAction::ImportFailed(message) => {
                 error!("Unable to construct database from tags: {}", message);
+                self.imp().import_start_time.take();
                 add_error_toast(i18n("Unable to add music folder."));
                 if let Some(window) = util::window() {
                     window.set_import_message("Import failed.");
@@ -220,14 +221,13 @@ impl Database {
             },
             DatabaseAction::TryAddMusicFolder(folder) => {
                 match self.try_add_music_folder(folder.clone()) {
-                    Ok(_) => {
-                        add_success_toast(&i18n("Added Folder:"), &format!("{:?}", folder));
-                    },
+                    Ok(_) => debug!("Started importing music folder: {:?}", folder),
                     Err(e) => {
                         error!("{}", e);
+                        self.imp().import_start_time.take();
                         add_error_toast(i18n("Unable to add music folder."));
                     },
-                } 
+                }
             }
             DatabaseAction::AddArtistImages(payload) => {
                 let n_amount = payload.len();
@@ -618,10 +618,13 @@ impl Database {
     ) -> Result<(), Box<dyn Error>> {
         let imp = self.imp();
 
+        let folder_display = format!("{:?}", PathBuf::from(&folder));
         let mut folders = imp.folders.borrow().clone();
         folders.insert(folder);
         let music_folders = folders.into_iter().collect::<Vec<String>>();
         imp.settings.set_strv("music-folders", music_folders.as_slice())?;
+
+        add_success_toast(&i18n("Added Folder:"), &folder_display);
 
         if !new_artists.is_empty() {
             debug!("Adding new artists ...");
