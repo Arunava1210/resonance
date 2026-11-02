@@ -20,6 +20,36 @@ static TRACK_NUMBER_REGEX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^[^\d]*(\d+)").expect("valid track/disc number regex")
 });
 
+fn parse_number_tag(value: &str) -> Option<u32> {
+    TRACK_NUMBER_REGEX
+        .captures(value)
+        .and_then(|captures| captures.get(1))
+        .and_then(|digits| digits.as_str().parse::<u32>().ok())
+}
+
+#[cfg(test)]
+mod metadata_number_tests {
+    use super::parse_number_tag;
+
+    #[test]
+    fn parses_plain_and_slash_separated_numbers() {
+        assert_eq!(parse_number_tag("7"), Some(7));
+        assert_eq!(parse_number_tag("07/12"), Some(7));
+    }
+
+    #[test]
+    fn parses_numbers_with_text_prefixes() {
+        assert_eq!(parse_number_tag("Track 07/12"), Some(7));
+        assert_eq!(parse_number_tag("Disc 2"), Some(2));
+    }
+
+    #[test]
+    fn ignores_missing_or_invalid_numbers() {
+        assert_eq!(parse_number_tag(""), None);
+        assert_eq!(parse_number_tag("no number"), None);
+    }
+}
+
 use super::database::DatabaseAction;
 use super::util;
 use std::time::{Duration, Instant};
@@ -199,54 +229,28 @@ impl Importer {
 
                                 match tag.as_str() {
                                     "genre" => {
-                                        genre_tag = value[0].clone();
+                                        genre_tag = value.first().cloned().unwrap_or_default();
                                     },
                                     "album" => {
-                                        album_tag = value[0].clone();
+                                        album_tag = value.first().cloned().unwrap_or_default();
                                     },
                                     "title" => {
-                                        title_tag = value[0].clone();
+                                        title_tag = value.first().cloned().unwrap_or_default();
                                     },
                                     "albumartist" => {
-                                        albumartist_tag = value[0].clone();
+                                        albumartist_tag = value.first().cloned().unwrap_or_default();
                                     },
                                     "artist" => {
-                                        artist_tag = value[0].clone();
+                                        artist_tag = value.first().cloned().unwrap_or_default();
                                     },
                                     "date" => {
-                                        date_tag = value[0].clone();
+                                        date_tag = value.first().cloned().unwrap_or_default();
                                     },
                                     "tracknumber" => {
-                                        let tag = TRACK_NUMBER_REGEX.captures(&value[0]).and_then(|cap| {
-                                            cap.get(1).map(|s| s.as_str())
-                                        });
-                                        track_number_tag = if !tag.is_none() {
-                                            match tag.unwrap().parse::<u32>() {
-                                                Ok(num) => Some(num),
-                                                Err(e) => {
-                                                    error!("{}: {}", tag.unwrap(), e);
-                                                    None
-                                                },
-                                            }
-                                        } else {
-                                            None
-                                        };
+                                        track_number_tag = value.first().and_then(|value| parse_number_tag(value));
                                     },
                                     "discnumber" => {
-                                        let tag = TRACK_NUMBER_REGEX.captures(&value[0]).and_then(|cap| {
-                                            cap.get(1).map(|s| s.as_str())
-                                        });
-                                        disc_number_tag = if !tag.is_none() {
-                                            match tag.unwrap().parse::<u32>() {
-                                                Ok(num) => Some(num),
-                                                Err(e) => {
-                                                    error!("{}: {}", tag.unwrap(), e);
-                                                    None
-                                                },
-                                            }
-                                        } else {
-                                            None
-                                        };
+                                        disc_number_tag = value.first().and_then(|value| parse_number_tag(value));
                                     },
                                     _ => (),
                                 }
@@ -276,38 +280,10 @@ impl Importer {
                                         filetype_tag = value.clone();
                                     },
                                     "tracknumber" => {
-                                        let tag = TRACK_NUMBER_REGEX.captures(&value).and_then(|cap| {
-                                            cap.get(1).map(|s| s.as_str())
-                                        });
-                                        debug!("{:?}", tag);
-                                        track_number_tag = if !tag.is_none() {
-                                            
-                                            match tag.unwrap().parse::<u32>() {
-                                                Ok(num) => Some(num),
-                                                Err(e) => {
-                                                    error!("{}: {}", tag.unwrap(), e);
-                                                    None
-                                                },
-                                            }
-                                        } else {
-                                            None
-                                        };
+                                        track_number_tag = parse_number_tag(value);
                                     },
                                     "discnumber" => {
-                                        let tag = TRACK_NUMBER_REGEX.captures(&value).and_then(|cap| {
-                                            cap.get(1).map(|s| s.as_str())
-                                        });
-                                        disc_number_tag = if !tag.is_none() {
-                                            match tag.unwrap().parse::<u32>() {
-                                                Ok(num) => Some(num),
-                                                Err(e) => {
-                                                    error!("{}: {}", tag.unwrap(), e);
-                                                    None
-                                                },
-                                            }
-                                        } else {
-                                            None
-                                        };
+                                        disc_number_tag = parse_number_tag(value);
                                     },
                                     _ => (),
                                 }
