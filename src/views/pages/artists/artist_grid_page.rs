@@ -262,14 +262,9 @@ impl ArtistGridPage {
         let list_store = self.list_store();
         list_store.remove_all();
 
-        if let Some(map) = model().artists() {
-            if !map.is_empty() {
-                for (_id, artists) in map.iter() {
-                    list_store.append(artists.as_ref());
-                }
-                self.set_property("hidden", false.to_value());
-                return;
-            }
+        if model().for_each_artist(|artist| list_store.append(artist.as_ref())) {
+            self.set_property("hidden", false.to_value());
+            return;
         }
         error!("No artists in model.");
         self.set_property("hidden", true.to_value());

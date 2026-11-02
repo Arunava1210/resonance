@@ -121,6 +121,24 @@ glib::wrapper! {
     pub struct Model(ObjectSubclass<imp::ModelPriv>);
 }
 
+
+/// Iterate over an in-memory model collection without duplicating the map.
+fn visit_collection<T>(
+    collection: &RefCell<Option<HashMap<i64, Rc<T>>>>,
+    mut visit: impl FnMut(&Rc<T>),
+) -> bool {
+    let collection = collection.borrow();
+    match collection.as_ref() {
+        Some(items) if !items.is_empty() => {
+            for item in items.values() {
+                visit(item);
+            }
+            true
+        }
+        _ => false,
+    }
+}
+
 impl Model {
     pub fn new() -> Model {
         let model = glib::Object::builder::<Model>().build();
@@ -594,6 +612,28 @@ impl Model {
 
     pub fn playlists(&self) -> Option<HashMap<i64, Rc<Playlist>>> {
         self.imp().playlists.borrow().as_ref().cloned()
+    }
+
+    /// Visit a collection in place without cloning its HashMap or Rc handles.
+    /// Returns false when the collection has not been loaded or is empty.
+    pub fn for_each_track(&self, visit: impl FnMut(&Rc<Track>)) -> bool {
+        visit_collection(&self.imp().tracks, visit)
+    }
+
+    pub fn for_each_album(&self, visit: impl FnMut(&Rc<Album>)) -> bool {
+        visit_collection(&self.imp().albums, visit)
+    }
+
+    pub fn for_each_artist(&self, visit: impl FnMut(&Rc<Artist>)) -> bool {
+        visit_collection(&self.imp().artists, visit)
+    }
+
+    pub fn for_each_genre(&self, visit: impl FnMut(&Rc<Genre>)) -> bool {
+        visit_collection(&self.imp().genres, visit)
+    }
+
+    pub fn for_each_playlist(&self, visit: impl FnMut(&Rc<Playlist>)) -> bool {
+        visit_collection(&self.imp().playlists, visit)
     }
 
     pub fn load_database(&self, database: Rc<Database>) {

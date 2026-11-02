@@ -263,14 +263,9 @@ impl PlaylistGridPage {
         let list_store = self.list_store();
         list_store.remove_all();
 
-        if let Some(map) = model().playlists() {
-            if !map.is_empty() {
-                for (_id, playlist) in map.iter() {
-                    list_store.append(playlist.as_ref());
-                }
-                self.set_property("hidden", false.to_value());
-                return;
-            }
+        if model().for_each_playlist(|playlist| list_store.append(playlist.as_ref())) {
+            self.set_property("hidden", false.to_value());
+            return;
         }
         debug!("No playlists in model.");
         self.set_property("hidden", true.to_value());

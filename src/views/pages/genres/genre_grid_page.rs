@@ -278,14 +278,9 @@ impl GenreGridPage {
         let list_store = self.list_store();
         list_store.remove_all();
 
-        if let Some(map) = model().genres() {
-            if !map.is_empty() {
-                for (_id, genres) in map.iter() {
-                    list_store.append(genres.as_ref());
-                }
-                self.set_property("hidden", false.to_value());
-                return;
-            }
+        if model().for_each_genre(|genre| list_store.append(genre.as_ref())) {
+            self.set_property("hidden", false.to_value());
+            return;
         }
         debug!("No genres in model.");
         self.set_property("hidden", true.to_value());

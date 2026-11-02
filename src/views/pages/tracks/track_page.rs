@@ -375,14 +375,9 @@ impl TrackPage {
 
     fn update_list_store(&self) {
         let list_store = self.list_store();
-        if let Some(map) = model().tracks() {
-            if !map.is_empty() {
-                for (_id, track) in map.iter() {
-                    list_store.append(track.as_ref());
-                }
-                self.set_property("hidden", false.to_value());
-                return;
-            }
+        if model().for_each_track(|track| list_store.append(track.as_ref())) {
+            self.set_property("hidden", false.to_value());
+            return;
         }
         debug!("No tracks in model.");
         self.set_property("hidden", true.to_value());

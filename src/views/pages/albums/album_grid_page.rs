@@ -333,14 +333,9 @@ impl AlbumGridPage {
         let list_store = self.list_store();
         list_store.remove_all();
 
-        if let Some(map) = model().albums() {
-            if !map.is_empty() {
-                for (_id, albums) in map.iter() {
-                    list_store.append(albums.as_ref());
-                }
-                self.set_property("hidden", false.to_value());
-                return;
-            }
+        if model().for_each_album(|album| list_store.append(album.as_ref())) {
+            self.set_property("hidden", false.to_value());
+            return;
         }
         debug!("No albums in model.");
         self.set_property("hidden", true.to_value());
