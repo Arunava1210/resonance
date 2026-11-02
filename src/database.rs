@@ -1186,7 +1186,7 @@ impl Database {
             .collect())
     }
 
-        pub fn query_genre_by_id(&self, id: u64) -> Result<(i64, String), Box<dyn Error>> {
+    pub fn query_genre_by_id(&self, id: u64) -> Result<(i64, String), Box<dyn Error>> {
         let conn = self.imp().conn.borrow();
         let conn = conn.as_ref().ok_or("Connection not established")?;
 
@@ -1245,7 +1245,7 @@ impl Database {
             .collect())
     }
 
-        pub fn query_artist_by_id(&self, id: u64) -> Result<(i64, String), Box<dyn Error>> {
+    pub fn query_artist_by_id(&self, id: u64) -> Result<(i64, String), Box<dyn Error>> {
         let conn = self.imp().conn.borrow();
         let conn = conn.as_ref().ok_or("Connection not established")?;
 
@@ -1293,7 +1293,7 @@ impl Database {
         Ok(result)
     }
 
-        pub fn query_album_by_id(&self, id: u64) -> Result<(i64, String, String, String, String, Option<i64>, i64, Option<i64>), Box<dyn Error>> {
+    pub fn query_album_by_id(&self, id: u64) -> Result<(i64, String, String, String, String, Option<i64>, i64, Option<i64>), Box<dyn Error>> {
         let conn = self.imp().conn.borrow();
         let conn = conn.as_ref().ok_or("Connection not established")?;
         let mut stmt = conn.prepare("SELECT * FROM Albums WHERE id = (?);")?;
