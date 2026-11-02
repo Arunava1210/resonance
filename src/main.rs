@@ -14,6 +14,8 @@ mod views;
 mod i18n;
 mod toasts;
 mod importer;
+#[cfg(feature = "native-importer")]
+mod native_metadata;
 mod search;
 mod sort;
 mod web;
