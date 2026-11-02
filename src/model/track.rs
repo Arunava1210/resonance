@@ -9,7 +9,13 @@ use gtk::{glib, gio};
 use glib::prelude::ToVariant;
 
 use std::{cell::Cell, cell::RefCell};
+use once_cell::sync::Lazy;
 use regex::Regex;
+
+// Compile once rather than once per track during large library imports.
+static SORT_ARTICLE_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^(the|a|an)\s+").expect("valid article-sorting regex")
+});
 
 mod imp {
     use super::*;
@@ -78,16 +84,14 @@ impl Track {
     pub fn load_info(&self, id: i64, title: String, album_name: String, album_artist: String, filetype: String, uri: String, date: String, genre: String, duration: f64, track_number: i64, disc_number: i64) {
         let imp = self.imp();
         
-        let re = Regex::new(r"^(the|a|an)\s+").unwrap();
-        
         let lowercase_title = title.to_lowercase();
-        let stripped_title = re.replace(&lowercase_title, "");
+        let stripped_title = SORT_ARTICLE_REGEX.replace(&lowercase_title, "");
 
         let lowercase_artist= album_artist.to_lowercase();
-        let stripped_artist = re.replace(&lowercase_artist, "");
+        let stripped_artist = SORT_ARTICLE_REGEX.replace(&lowercase_artist, "");
 
         let lowercase_album= album_name.to_lowercase();
-        let stripped_album = re.replace(&lowercase_album, "");
+        let stripped_album = SORT_ARTICLE_REGEX.replace(&lowercase_album, "");
         
         imp.sort_title.replace(format!("{}", stripped_title));
         imp.sort_artist.replace(format!("{}", stripped_artist));
