@@ -65,26 +65,35 @@ impl CoverArtPixbufLoader {
             return Ok(());
         }
 
-        let data = self.imp().data.borrow()
-            .as_ref()
-            .cloned()
+        // Move the compressed bytes out rather than cloning them. On decode
+        // failure they are restored so a later request can retry safely.
+        let data = self.imp().data.borrow_mut()
+            .take()
             .ok_or_else(|| "No artwork data available".to_string())?;
 
-        let loader = gdk_pixbuf::PixbufLoader::new();
-        loader.write(&data).map_err(|error| error.to_string())?;
-        loader.close().map_err(|error| error.to_string())?;
+        let decoded: Result<(Rc<Pixbuf>, Option<Vec<gdk::RGBA>>), String> = (|| {
+            let loader = gdk_pixbuf::PixbufLoader::new();
+            loader.write(&data).map_err(|error| error.to_string())?;
+            loader.close().map_err(|error| error.to_string())?;
 
-        let finished_pixbuf = loader.pixbuf()
-            .ok_or_else(|| "Unable to decode artwork".to_string())?;
-        let palette = util::load_palette(&finished_pixbuf);
+            let finished_pixbuf = loader.pixbuf()
+                .ok_or_else(|| "Unable to decode artwork".to_string())?;
+            let palette = util::load_palette(&finished_pixbuf);
+            Ok((Rc::new(finished_pixbuf), palette))
+        })();
 
-        self.imp().pixbuf.replace(Some(Rc::new(finished_pixbuf)));
-        self.imp().palette.replace(palette);
-        // The decoded pixbuf is now cached, so release the original compressed
-        // image bytes to avoid retaining both representations.
-        self.imp().data.replace(None);
-
-        Ok(())
+        match decoded {
+            Ok((pixbuf, palette)) => {
+                self.imp().pixbuf.replace(Some(pixbuf));
+                self.imp().palette.replace(palette);
+                // The decoded pixbuf is cached; compressed bytes can be freed.
+                Ok(())
+            }
+            Err(error) => {
+                self.imp().data.replace(Some(data));
+                Err(error)
+            }
+        }
     }
 
     pub fn pixbuf(&self) -> Result<Rc<Pixbuf>, String> {
