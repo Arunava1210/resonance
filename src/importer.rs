@@ -236,7 +236,7 @@ impl Importer {
         let mut added_albums: HashMap<String, i64> = HashMap::new();
         let mut added_tracks: HashMap<String, i64> = HashMap::new();
         let mut added_art: HashMap<&[u8], i64> = HashMap::new();
-        let mut album_art: HashMap<i64, Vec<i64>> = HashMap::new();
+        let mut album_art: HashMap<i64, AlbumArtCounter> = HashMap::new();
 
         // Count existing unknown-album tracks once; use an in-memory counter as
         // new tracks are inserted instead of running COUNT(*) for every orphan.
@@ -481,21 +481,15 @@ impl Importer {
                 if let Some(art_id) = cover_art_id {
                     added_art.insert(data, art_id);
 
-                    if let Some(ids) = album_art.get_mut(&album_id) {
-                        ids.push(art_id);
-    
-                        if let Some(album_art) = most_frequent_id(ids.as_slice()) {
-                            database.update_album_art(&tx, album_id, album_art)?;
-                        }
-                    } else {
-                        let mut ids = Vec::new();
-                        ids.push(art_id);
-
-                        if let Some(album_art) = most_frequent_id(ids.as_slice()) {
-                            database.update_album_art(&tx, album_id, album_art)?;
-                        }
-
-                        album_art.insert(album_id, ids);
+                    // Update an album's selected cover in expected O(1)
+                    // time per track, instead of rescanning every previous
+                    // artwork ID whenever a track is imported.
+                    if let Some(selected_art_id) = album_art
+                        .entry(album_id)
+                        .or_default()
+                        .record(art_id)
+                    {
+                        database.update_album_art(&tx, album_id, selected_art_id)?;
                     }
                 }
             }
@@ -512,43 +506,79 @@ impl Importer {
     }
 }
 
-// Select the most common artwork ID in linear expected time. When two IDs
-// have the same frequency, preserve the original behaviour and choose the
-// one whose first occurrence appears earliest in the input.
-fn most_frequent_id(ids: &[i64]) -> Option<i64> {
-    let mut frequencies: HashMap<i64, (usize, usize)> = HashMap::with_capacity(ids.len());
+#[derive(Default)]
+struct AlbumArtCounter {
+    // (count, first position) for every artwork ID seen on this album.
+    frequencies: HashMap<i64, (usize, usize)>,
+    // (ID, count, first position) of the current winner.
+    best: Option<(i64, usize, usize)>,
+    next_position: usize,
+}
 
-    for (index, id) in ids.iter().copied().enumerate() {
-        let entry = frequencies.entry(id).or_insert((0, index));
-        entry.0 += 1;
+impl AlbumArtCounter {
+    /// Record one artwork occurrence. Returns the selected ID only when the
+    /// winner changes, preserving first-seen tie-breaking from the old logic.
+    fn record(&mut self, id: i64) -> Option<i64> {
+        let position = self.next_position;
+        self.next_position += 1;
+
+        let (count, first_position) = {
+            let entry = self.frequencies.entry(id).or_insert((0, position));
+            entry.0 += 1;
+            *entry
+        };
+
+        let becomes_best = match self.best {
+            None => true,
+            Some((_, best_count, best_position)) => {
+                count > best_count || (count == best_count && first_position < best_position)
+            }
+        };
+
+        if becomes_best {
+            self.best = Some((id, count, first_position));
+            Some(id)
+        } else {
+            None
+        }
     }
-
-    frequencies
-        .into_iter()
-        .max_by(|(_, (count_a, first_a)), (_, (count_b, first_b))| {
-            count_a
-                .cmp(count_b)
-                .then_with(|| first_b.cmp(first_a))
-        })
-        .map(|(id, _)| id)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::most_frequent_id;
+    use super::AlbumArtCounter;
 
     #[test]
-    fn returns_none_for_empty_input() {
-        assert_eq!(most_frequent_id(&[]), None);
+    fn first_artwork_becomes_the_initial_selection() {
+        let mut counter = AlbumArtCounter::default();
+        assert_eq!(counter.record(7), Some(7));
     }
 
     #[test]
-    fn returns_the_most_frequent_id() {
-        assert_eq!(most_frequent_id(&[4, 9, 9, 4, 9]), Some(9));
+    fn only_changes_selection_when_another_id_becomes_more_frequent() {
+        let mut counter = AlbumArtCounter::default();
+        assert_eq!(counter.record(4), Some(4));
+        assert_eq!(counter.record(9), None);
+        assert_eq!(counter.record(9), Some(9));
+        assert_eq!(counter.record(4), None);
+        assert_eq!(counter.record(9), None);
     }
 
     #[test]
     fn keeps_first_seen_id_when_frequencies_tie() {
-        assert_eq!(most_frequent_id(&[9, 4, 4, 9]), Some(9));
+        let mut counter = AlbumArtCounter::default();
+        assert_eq!(counter.record(9), Some(9));
+        assert_eq!(counter.record(4), None);
+        assert_eq!(counter.record(4), None);
+        assert_eq!(counter.record(9), None);
+    }
+
+    #[test]
+    fn switches_winner_when_later_count_breaks_a_tie() {
+        let mut counter = AlbumArtCounter::default();
+        assert_eq!(counter.record(9), Some(9));
+        assert_eq!(counter.record(4), None);
+        assert_eq!(counter.record(4), None);
+        assert_eq!(counter.record(4), Some(4));
     }
 }
