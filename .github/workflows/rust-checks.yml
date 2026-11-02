@@ -73,5 +73,18 @@ jobs:
             git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
 
+      - name: Fetch small real-audio parser fixtures
+        run: |
+          set -eu
+          fixtures=/tmp/resonance-audio-fixtures
+          mkdir -p "$fixtures"
+          base=https://raw.githubusercontent.com/bakgio/audex/0aaad9e0364405170ef42af3a071a905dc623dda/tests/data
+          for file in silence-44-s.mp3 silence-44-s.flac multipagecomment.ogg example.opus with-id3.aif alac.m4a silence-1.wma covr-with-name.m4a; do
+            curl -fsSL "$base/$file" -o "$fixtures/$file"
+          done
+          cp "$fixtures/with-id3.aif" "$fixtures/with-id3.aiff"
+          cp "$fixtures/silence-1.wma" "$fixtures/sample.wmv"
+          echo "RESONANCE_AUDIO_FIXTURES=$fixtures" >> "$GITHUB_ENV"
+
       - name: Run tests
         run: cargo test --locked
