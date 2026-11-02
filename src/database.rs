@@ -1760,27 +1760,28 @@ impl Database {
     fn prune_file_uri(&self, tx: &Transaction) -> Result<(), Box<dyn Error>> {
         debug!("prune_file_uri");
 
-        let mut stmt = tx.prepare_cached("SELECT id FROM File_URIs;")?;
-        let rows = stmt.query_map([], |row| {
-            let id: i64 = row.get(0)?;
-            Ok(id)
-        })?;
+        // Remove folder links for files that no longer have a track, then
+        // delete those file records in bulk. The previous per-file EXISTS and
+        // DELETE statements caused several database round-trips per file.
+        tx.execute(
+            "DELETE FROM Folder_File_Junction
+             WHERE file_id IN (
+                 SELECT f.id
+                 FROM File_URIs AS f
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM Tracks AS t WHERE t.file_uri_id = f.id
+                 )
+             );",
+            [],
+        )?;
 
-        for row in rows {
-            let file_uri_id = row?;
-
-            let mut stmt = tx.prepare_cached("SELECT EXISTS(SELECT 1 FROM Tracks WHERE file_uri_id = (?) LIMIT 1);")?;
-            let exists: i32 = stmt.query_row([file_uri_id], |row| row.get(0))?;
-            
-            if exists == 0 {
-                let mut stmt = tx.prepare_cached("DELETE FROM Folder_File_Junction WHERE file_id = (?);")?;
-                stmt.execute(params![file_uri_id])?;
-
-                let mut stmt = tx.prepare_cached("DELETE FROM File_URIs WHERE id = (?);")?;
-                stmt.execute(params![file_uri_id])?;
-            }
-        }
-
+        tx.execute(
+            "DELETE FROM File_URIs
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM Tracks WHERE Tracks.file_uri_id = File_URIs.id
+             );",
+            [],
+        )?;
 
         Ok(())
     }
@@ -2284,7 +2285,11 @@ impl Database {
              CREATE INDEX IF NOT EXISTS idx_playlist_entry_playlist_junction_playlist
                  ON Playlist_Entry_Playlist_Junction(playlist_id);
              CREATE INDEX IF NOT EXISTS idx_playlist_entry_playlist_junction_entry
-                 ON Playlist_Entry_Playlist_Junction(playlist_entry_id);"
+                 ON Playlist_Entry_Playlist_Junction(playlist_entry_id);
+             CREATE INDEX IF NOT EXISTS idx_tracks_file_uri_id
+                 ON Tracks(file_uri_id);
+             CREATE INDEX IF NOT EXISTS idx_music_folders_uri
+                 ON Music_Folders(uri);"
         )?;
 
         Ok(())
