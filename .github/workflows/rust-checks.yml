@@ -6,6 +6,10 @@ on:
       - main
       - rust-native-performance
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -37,6 +41,11 @@ jobs:
 
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
 
       - name: Check compilation
         run: cargo check --locked
