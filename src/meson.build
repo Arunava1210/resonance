@@ -45,7 +45,6 @@ rust_sources = files(
   'sort.rs',
 )
 
-subdir('python')
 subdir('model')
 subdir('views')
 subdir('player')
