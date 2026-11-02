@@ -19,6 +19,9 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Install Meson
+        run: sudo apt-get install --no-install-recommends -y meson
+
       - name: Install native development libraries
         run: |
           sudo apt-get update
@@ -42,6 +45,9 @@ jobs:
 
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate Meson build configuration
+        run: meson setup build --prefix=/usr
 
       - name: Check compilation
         run: cargo check --locked
