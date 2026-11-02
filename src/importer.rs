@@ -464,14 +464,14 @@ impl Importer {
                     if let Some(ids) = album_art.get_mut(&album_id) {
                         ids.push(art_id);
     
-                        if let Some(album_art) = most_frequest_id(ids.clone()) {
+                        if let Some(album_art) = most_frequent_id(ids.as_slice()) {
                             database.update_album_art(&tx, album_id, album_art)?;
                         }
                     } else {
                         let mut ids = Vec::new();
                         ids.push(art_id);
 
-                        if let Some(album_art) = most_frequest_id(ids.clone()) {
+                        if let Some(album_art) = most_frequent_id(ids.as_slice()) {
                             database.update_album_art(&tx, album_id, album_art)?;
                         }
 
@@ -489,26 +489,43 @@ impl Importer {
     }
 }
 
-fn most_frequest_id(array: Vec<i64>) -> Option<i64> {
-    if array.len() <= 0 {
-        return None;
+// Select the most common artwork ID in linear expected time. When two IDs
+// have the same frequency, preserve the original behaviour and choose the
+// one whose first occurrence appears earliest in the input.
+fn most_frequent_id(ids: &[i64]) -> Option<i64> {
+    let mut frequencies: HashMap<i64, (usize, usize)> = HashMap::with_capacity(ids.len());
+
+    for (index, id) in ids.iter().copied().enumerate() {
+        let entry = frequencies.entry(id).or_insert((0, index));
+        entry.0 += 1;
     }
 
-    let mut max_count = 0;
-    let mut element_having_max_freq = None;
+    frequencies
+        .into_iter()
+        .max_by(|(_, (count_a, first_a)), (_, (count_b, first_b))| {
+            count_a
+                .cmp(count_b)
+                .then_with(|| first_b.cmp(first_a))
+        })
+        .map(|(id, _)| id)
+}
 
-    for i in 0..array.len() {
-        let mut count = 0;
-        for j in 0..array.len() {
-            if array[i] == array[j] {
-                count+=1;
-            }
-        }
-        if count > max_count {
-            max_count = count;
-            element_having_max_freq = Some(array[i]);
-        }
+#[cfg(test)]
+mod tests {
+    use super::most_frequent_id;
+
+    #[test]
+    fn returns_none_for_empty_input() {
+        assert_eq!(most_frequent_id(&[]), None);
     }
 
-    element_having_max_freq
+    #[test]
+    fn returns_the_most_frequent_id() {
+        assert_eq!(most_frequent_id(&[4, 9, 9, 4, 9]), Some(9));
+    }
+
+    #[test]
+    fn keeps_first_seen_id_when_frequencies_tie() {
+        assert_eq!(most_frequent_id(&[9, 4, 4, 9]), Some(9));
+    }
 }
