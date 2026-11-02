@@ -40,6 +40,7 @@ rust_sources = files(
   'i18n.rs',
   'toasts.rs',
   'importer.rs',
+  'native_metadata.rs',
   'search.rs',
   'sort.rs',
 )
