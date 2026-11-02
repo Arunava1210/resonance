@@ -399,6 +399,7 @@ mod tests {
             "with-id3.aif",
             "with-id3.aiff",
             "alac.m4a",
+            "covr-with-name.m4a",
             "silence-1.wma",
             "sample.asf",
             "sample.wmv",
