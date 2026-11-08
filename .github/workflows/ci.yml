@@ -35,12 +35,23 @@ jobs:
       - name: Set up stable Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Configure Meson
-        run: meson setup build --prefix=/usr --buildtype=release
+      - name: Generate dependency lockfile
+        run: cargo generate-lockfile
 
       - name: Run Rust tests
         run: cargo test --locked --all-targets
 
+      - name: Configure Meson
+        run: meson setup build --prefix=/usr --buildtype=release
+
       - name: Build Resonance
         run: meson compile -C build
+
+      - name: Upload resolved Cargo lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: resonance-cargo-lockfile
+          path: Cargo.lock
+          if-no-files-found: error
+          retention-days: 7
 
