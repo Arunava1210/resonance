@@ -61,16 +61,22 @@ fn extension(path: &Path) -> Option<String> {
 }
 
 fn is_hidden(path: &Path) -> bool {
-    path.file_name()
-        .map(|name| name.to_string_lossy().starts_with('.'))
-        .unwrap_or(false)
+    path.components().any(|component| match component {
+        std::path::Component::Normal(name) => name.to_string_lossy().starts_with('.'),
+        _ => false,
+    })
 }
 
 fn list_audio_files(folder: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let mut rust_files = Vec::new();
     let mut legacy_files = Vec::new();
 
-    for entry in WalkDir::new(folder).follow_links(false).into_iter() {
+    for entry in WalkDir::new(folder)
+        .follow_links(false)
+        .into_iter()
+        // Prune hidden directories before WalkDir descends into them.
+        .filter_entry(|entry| entry.depth() == 0 || !is_hidden(entry.path()))
+    {
         let entry = match entry {
             Ok(entry) => entry,
             Err(err) => {
@@ -727,5 +733,17 @@ mod tests {
         // The challenger is selected only after it exceeds the current count.
         assert!(record_album_art_frequency(&mut frequencies, &mut selection, 5));
         assert_eq!(selection, Some((5, 4)));
+    }
+
+    #[test]
+    fn hidden_ancestor_directories_are_detected() {
+        assert!(is_hidden(Path::new("/music/.private/song.flac")));
+        assert!(is_hidden(Path::new("/music/.Trash/album/track.flac")));
+    }
+
+    #[test]
+    fn visible_paths_are_not_hidden() {
+        assert!(!is_hidden(Path::new("/music/Albums/track.flac")));
+        assert!(!is_hidden(Path::new(".")));
     }
 }
