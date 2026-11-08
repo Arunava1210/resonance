@@ -90,4 +90,4 @@ The Rust importer currently recognises MP3, AIFF, Ogg Vorbis, Opus, FLAC, MP4/M4
 
 ## Playback processing
 
-When the GStreamer Good Plug-ins ReplayGain filter (`rgvolume`) is installed, Resonance uses embedded ReplayGain/R128 tags to normalize track loudness. Album gain is preferred so tracks from the same album retain their relative levels. The filter includes peak-aware clipping prevention. If the plugin is unavailable, normal playback continues without loudness normalization.
+When the GStreamer Good Plug-ins ReplayGain filter (`rgvolume`) is installed, Resonance uses embedded ReplayGain/R128 tags to normalize track loudness. Album gain is preferred by default; the Playback preferences let users switch to track-level gain. The filter includes peak-aware clipping prevention. If the plugin is unavailable, normal playback continues without loudness normalization.
