@@ -1,0 +1,163 @@
+name: Build AppImage
+
+on:
+  push:
+    branches:
+      - rust-native-importer
+  workflow_dispatch:
+
+concurrency:
+  group: appimage-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  appimage:
+    name: Build portable x86_64 AppImage
+    runs-on: ubuntu-24.04
+    container:
+      image: debian:bookworm-slim
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install build and runtime dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            bash \
+            build-essential \
+            ca-certificates \
+            curl \
+            desktop-file-utils \
+            file \
+            gettext \
+            libadwaita-1-dev \
+            libdbus-1-dev \
+            libfuse2 \
+            libglib2.0-dev \
+            libgirepository1.0-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-bad1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            libgtk-4-dev \
+            libssl-dev \
+            libxml2-utils \
+            librsvg2-dev \
+            librsvg2-bin \
+            libsqlite3-dev \
+            meson \
+            ninja-build \
+            patchelf \
+            pkg-config \
+            python3 \
+            xz-utils \
+            gstreamer1.0-libav \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-ugly \
+            gstreamer1.0-tools \
+            xvfb \
+            xauth \
+            dbus-daemon
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build and install into AppDir
+        shell: bash
+        run: |
+          set -euxo pipefail
+          meson setup build --prefix=/usr --libdir=lib --buildtype=release
+          APPDIR="$PWD/AppDir"
+          mkdir -p "$APPDIR"
+          DESTDIR="$APPDIR" meson install -C build
+          rsvg-convert -w 256 -h 256 \
+            "$APPDIR/usr/share/icons/hicolor/scalable/apps/io.github.nate_xyz.Resonance.svg" \
+            -o "$APPDIR/io.github.nate_xyz.Resonance.png"
+
+      - name: Download linuxdeploy and AppImage plugins
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p tools
+          curl -fsSL \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage \
+            -o tools/linuxdeploy-x86_64.AppImage
+          curl -fsSL \
+            https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh \
+            -o tools/linuxdeploy-plugin-gtk.sh
+          curl -fsSL \
+            https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gstreamer/master/linuxdeploy-plugin-gstreamer.sh \
+            -o tools/linuxdeploy-plugin-gstreamer.sh
+          chmod +x tools/linuxdeploy-x86_64.AppImage \
+            tools/linuxdeploy-plugin-gtk.sh \
+            tools/linuxdeploy-plugin-gstreamer.sh
+
+      - name: Bundle GTK4 and GStreamer runtime
+        shell: bash
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          DEPLOY_GTK_VERSION: "4"
+          GSTREAMER_PLUGINS_DIR: /usr/lib/x86_64-linux-gnu/gstreamer-1.0
+          GSTREAMER_HELPERS_DIR: /usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0
+        run: |
+          set -euxo pipefail
+          export PATH="$PWD/tools:$PATH"
+          export LINUXDEPLOY="$PWD/tools/linuxdeploy-x86_64.AppImage"
+          "$LINUXDEPLOY" \
+            --appdir "$PWD/AppDir" \
+            --executable "$PWD/AppDir/usr/bin/resonance" \
+            --desktop-file "$PWD/AppDir/usr/share/applications/io.github.nate_xyz.Resonance.desktop" \
+            --icon-file "$PWD/AppDir/usr/share/icons/hicolor/scalable/apps/io.github.nate_xyz.Resonance.svg" \
+            --plugin gtk \
+            --plugin gstreamer \
+            --output appimage
+          mkdir -p dist
+          appimage="$(find . -maxdepth 1 -type f -iname '*.appimage' -print -quit)"
+          test -n "$appimage"
+          mv "$appimage" dist/Resonance-x86_64.AppImage
+
+      - name: Smoke-test the AppImage
+        shell: bash
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          set -euo pipefail
+          test -x dist/Resonance-x86_64.AppImage
+          test -f AppDir/usr/share/resonance/resonance.gresource
+          test -d AppDir/usr/lib/gstreamer-1.0
+          gtk_modules="$(find AppDir/usr/lib -type d -name gtk-4.0 -print -quit)"
+          test -n "$gtk_modules"
+          temp_home="$(mktemp -d)"
+          mkdir -p "$temp_home/config" "$temp_home/data" "$temp_home/cache"
+          set +e
+          XDG_CONFIG_HOME="$temp_home/config" \
+          XDG_DATA_HOME="$temp_home/data" \
+          XDG_CACHE_HOME="$temp_home/cache" \
+            dbus-run-session -- xvfb-run -a timeout --signal=TERM 15s \
+              "$PWD/dist/Resonance-x86_64.AppImage" \
+              >"$temp_home/app.log" 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ne 124 ]; then
+            cat "$temp_home/app.log"
+            echo "Resonance did not stay running during the AppImage launch test (exit $status)." >&2
+            exit 1
+          fi
+          cat "$temp_home/app.log"
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: Resonance-x86_64.AppImage
+          path: dist/Resonance-x86_64.AppImage
+          if-no-files-found: error
+          retention-days: 30
