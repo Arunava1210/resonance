@@ -121,6 +121,14 @@ impl Player {
         self.discord_enabled.set(settings.boolean("discord-rich-presence"));
         self.lastfm_enabled.set(settings.boolean("last-fm-enabled"));
         self.commit_threshold.set(settings.double("play-commit-threshold"));
+
+        self.backend.set_replaygain_album_mode(settings.boolean("replaygain-album-mode"));
+        settings.connect_changed(
+            Some("replaygain-album-mode"),
+            clone!(@strong self as this => move |settings, _key| {
+                this.backend.set_replaygain_album_mode(settings.boolean("replaygain-album-mode"));
+            }),
+        );
     }
 
     fn setup_channels(self: Rc<Self>) {
