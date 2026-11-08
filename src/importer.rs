@@ -10,6 +10,7 @@ use gtk_macros::send;
 use std::{
     collections::HashMap,
     error::Error,
+    fs,
     path::{Path, PathBuf},
     thread,
 };
@@ -22,6 +23,7 @@ use lofty::{
 };
 use pyo3::prelude::*;
 use rayon::prelude::*;
+use regex::Regex;
 use rusqlite::Transaction;
 use walkdir::WalkDir;
 
@@ -591,8 +593,16 @@ impl Importer {
 
             
 
-            let metadata = fs::metadata(uri.to_string()).unwrap();
-            let modification_time = metadata.modified().unwrap();
+            let metadata = match fs::metadata(uri) {
+                Ok(metadata) => metadata,
+                Err(err) => {
+                    error!("Skipping {} because file metadata could not be read: {}", uri, err);
+                    continue;
+                }
+            };
+            let modification_time = metadata
+                .modified()
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
             let modification_time_dt = DateTime::<Utc>::from(modification_time);
 
             // if let Some(w) = window {
