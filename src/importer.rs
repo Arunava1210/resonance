@@ -75,7 +75,14 @@ fn list_audio_files(folder: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
         .follow_links(false)
         .into_iter()
         // Prune hidden directories before WalkDir descends into them.
-        .filter_entry(|entry| entry.depth() == 0 || !is_hidden(entry.path()))
+        .filter_entry(|entry| {
+            entry.depth() == 0
+                || entry
+                    .path()
+                    .strip_prefix(folder)
+                    .map(|relative_path| !is_hidden(relative_path))
+                    .unwrap_or(true)
+        })
     {
         let entry = match entry {
             Ok(entry) => entry,
@@ -86,7 +93,7 @@ fn list_audio_files(folder: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
         };
 
         let path = entry.path();
-        if !entry.file_type().is_file() || is_hidden(path) {
+        if !entry.file_type().is_file() {
             continue;
         }
 
