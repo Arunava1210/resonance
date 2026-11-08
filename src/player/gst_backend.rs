@@ -17,7 +17,7 @@ use gtk_macros::send;
 
 use std::{cell::Cell, cell::RefCell, rc::Rc};
 use std::time::Duration;
-use log::{debug, error};
+use log::{debug, error, warn};
 
 use super::player::PlaybackAction;
 
@@ -55,6 +55,22 @@ impl GstPlayer {
             .unwrap()
             .downcast::<gst::Pipeline>()
             .unwrap();
+
+        // ReplayGain is handled in GStreamer so decoded audio is normalized
+        // without adding per-sample work to the application. The rgvolume
+        // plugin is optional; ordinary playback remains available without it.
+        match gst::ElementFactory::make_with_name("rgvolume", None) {
+            Ok(filter) => {
+                // Album gain preserves relative loudness within an album;
+                // rgvolume also applies peak-aware clipping prevention.
+                filter.set_property("album-mode", true);
+                pipeline.set_property_from_value("audio-filter", &filter.to_value());
+                debug!("ReplayGain audio filter enabled");
+            }
+            Err(err) => {
+                warn!("ReplayGain plugin is unavailable; playing without loudness normalization: {}", err);
+            }
+        }
         
         let gstplayer = Rc::new(Self {
             sender: player_sender,
