@@ -97,6 +97,10 @@
       <default>true</default>
     </key>
 
+    <key name="replaygain-album-mode" type="b">
+      <default>true</default>
+    </key>
+
     <key name="show-alpha" type="b">
       <default>true</default>
     </key>
