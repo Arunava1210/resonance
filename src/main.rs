@@ -44,11 +44,23 @@ fn main() -> glib::ExitCode  {
         .expect("Unable to set the text domain encoding");
     textdomain(GETTEXT_PACKAGE).expect("Unable to switch to the text domain");
 
-    // Load resources
+    // Load resources. AppImages are mounted below APPDIR, so their
+    // resources must be resolved relative to that mount instead of the
+    // host's configured /usr/share path.
     debug!("Loading resources");
     let resources = match env::var("MESON_DEVENV") {
-        Err(_) => gio::Resource::load(PKGDATADIR.to_owned() + "/resonance.gresource")
-            .expect("Unable to find resonance.gresource"),
+        Err(_) => {
+            let appimage_resource = env::var_os("APPDIR")
+                .map(std::path::PathBuf::from)
+                .map(|appdir| appdir.join("usr/share/resonance/resonance.gresource"))
+                .filter(|path| path.is_file());
+
+            let resource_path = appimage_resource
+                .unwrap_or_else(|| std::path::PathBuf::from(PKGDATADIR).join("resonance.gresource"));
+
+            gio::Resource::load(&resource_path)
+                .unwrap_or_else(|err| panic!("Unable to find resonance.gresource at {}: {}", resource_path.display(), err))
+        }
         Ok(_) => match env::current_exe() {
             Ok(path) => {
                 let mut resource_path = path;
