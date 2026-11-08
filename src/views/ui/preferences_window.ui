@@ -500,6 +500,23 @@
 
             <child>
               <object class="AdwActionRow">
+                <property name="title" translatable="yes">Prefer Album ReplayGain</property>
+                <property name="subtitle" translatable="yes">Preserve the relative loudness of tracks from the same album. Disable to use track-level gain instead.</property>
+                <property name="activatable-widget">switch_replaygain_album_mode</property>
+                <child>
+                  <object class="GtkSwitch" id="switch_replaygain_album_mode">
+                    <property name="valign">center</property>
+                    <property name="active">true</property>
+                  </object>
+                </child>
+                <style>
+                  <class name="darken-mas-mas"/>
+                </style>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwActionRow">
                 <property name="title" translatable="yes">Album from Track</property>
                 <property name="subtitle" translatable="yes">If enabled, playing a track within the album sidebar, detail, or card UI will play or add the album from the selected track. Otherwise, only the selected track will be played.</property>
 
