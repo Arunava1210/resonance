@@ -46,6 +46,7 @@ pub struct GstPlayer {
     // pub tick: Cell<u64>,
     pub duration: RefCell<Option<f64>>,
     pub volume: Cell<f64>,
+    pub replaygain_filter: Option<gst::Element>,
 
 }
 
@@ -59,18 +60,20 @@ impl GstPlayer {
         // ReplayGain is handled in GStreamer so decoded audio is normalized
         // without adding per-sample work to the application. The rgvolume
         // plugin is optional; ordinary playback remains available without it.
-        match gst::ElementFactory::make_with_name("rgvolume", None) {
+        let replaygain_filter = match gst::ElementFactory::make_with_name("rgvolume", None) {
             Ok(filter) => {
                 // Album gain preserves relative loudness within an album;
                 // rgvolume also applies peak-aware clipping prevention.
                 filter.set_property("album-mode", true);
                 pipeline.set_property_from_value("audio-filter", &filter.to_value());
                 debug!("ReplayGain audio filter enabled");
+                Some(filter)
             }
             Err(err) => {
                 warn!("ReplayGain plugin is unavailable; playing without loudness normalization: {}", err);
+                None
             }
-        }
+        };
         
         let gstplayer = Rc::new(Self {
             sender: player_sender,
@@ -81,6 +84,7 @@ impl GstPlayer {
             // tick: Cell::new(0),
             duration: RefCell::new(None),
             volume: Cell::new(0.0),
+            replaygain_filter,
 
         });
 
@@ -90,6 +94,13 @@ impl GstPlayer {
 
     pub fn pipeline(&self) -> &gst::Pipeline {
         &self.pipeline
+    }
+
+    /// Select album-level or track-level ReplayGain metadata at runtime.
+    pub fn set_replaygain_album_mode(&self, album_mode: bool) {
+        if let Some(filter) = &self.replaygain_filter {
+            filter.set_property("album-mode", album_mode);
+        }
     }
 
 
