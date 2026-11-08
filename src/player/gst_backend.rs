@@ -319,7 +319,7 @@ impl GstPlayer {
             DURATION_QUERY_INTERVAL,
             clone!(@strong self as this => @default-return Continue(false), move || {
                 let keep_waiting = this.query_duration();
-                if !keep_waiting {
+                if !keep_waiting.0 {
                     // The callback returns false, so GLib removes this source after it exits.
                     // Drop the stored ID without trying to remove the source a second time.
                     drop(this.duration_query_source.borrow_mut().take());
