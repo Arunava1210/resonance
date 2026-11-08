@@ -58,11 +58,11 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Run Rust tests
-        run: cargo test --locked --all-targets
-
       - name: Configure Meson
         run: meson setup build --prefix=/usr --buildtype=release
+
+      - name: Run Rust tests
+        run: cargo test --locked --all-targets
 
       - name: Build Resonance
         run: meson compile -C build
