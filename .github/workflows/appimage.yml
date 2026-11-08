@@ -53,6 +53,7 @@ jobs:
             patchelf \
             pkg-config \
             python3 \
+            python3-dev \
             xz-utils \
             gstreamer1.0-libav \
             gstreamer1.0-plugins-bad \
