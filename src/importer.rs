@@ -334,9 +334,12 @@ impl Importer {
         let mut added_albums: HashMap<String, i64> = HashMap::new();
         let mut added_tracks: HashMap<String, i64> = HashMap::new();
         let mut added_art: HashMap<&[u8], i64> = HashMap::new();
-        let mut album_art: HashMap<i64, Vec<i64>> = HashMap::new();
+        let mut album_art_counts: HashMap<i64, HashMap<i64, usize>> = HashMap::new();
+        let mut album_art_selection: HashMap<i64, Option<(i64, usize)>> = HashMap::new();
 
         let mut orphan_tracks = 0;
+        // This count is constant during this import; avoid querying it once per orphan track.
+        let existing_orphan_tracks = database.query_orphan_tracks(&tx)? as u32;
         let current_folder_id = database.add_folder(&tx, folder_uri)?;
 
         let re = Regex::new(r"^[^\d]*(\d+)").unwrap();
@@ -356,9 +359,7 @@ impl Importer {
             let mut track_number_tag = None;
             let mut filetype_tag = String::new();
 
-            if cover_art_map.contains_key(&uri.clone()) {
-                cover_art = cover_art_map.get(&uri.clone());
-            }
+            cover_art = cover_art_map.get(uri);
             
             for (type_key, type_map) in track_map {
 
@@ -519,8 +520,7 @@ impl Importer {
                 None => {
                     if album_key == "Unknown AlbumUnknown Artist" {
                         orphan_tracks += 1;
-                        let in_db = database.query_orphan_tracks(&tx)? as u32;
-                        orphan_tracks+in_db
+                        orphan_tracks + existing_orphan_tracks
                     } else {
                         error!("No track number for {}", song_key);
                         1
@@ -638,21 +638,12 @@ impl Importer {
                 if let Some(art_id) = cover_art_id {
                     added_art.insert(data, art_id);
 
-                    if let Some(ids) = album_art.get_mut(&album_id) {
-                        ids.push(art_id);
-    
-                        if let Some(album_art) = most_frequent_id(ids.clone()) {
-                            database.update_album_art(&tx, album_id, album_art)?;
+                    let frequencies = album_art_counts.entry(album_id).or_default();
+                    let selection = album_art_selection.entry(album_id).or_insert(None);
+                    if record_album_art_frequency(frequencies, selection, art_id) {
+                        if let Some((selected_art_id, _)) = *selection {
+                            database.update_album_art(&tx, album_id, selected_art_id)?;
                         }
-                    } else {
-                        let mut ids = Vec::new();
-                        ids.push(art_id);
-
-                        if let Some(album_art) = most_frequent_id(ids.clone()) {
-                            database.update_album_art(&tx, album_id, album_art)?;
-                        }
-
-                        album_art.insert(album_id, ids);
                     }
                 }
             }
@@ -666,21 +657,34 @@ impl Importer {
     }
 }
 
-fn most_frequent_id(array: Vec<i64>) -> Option<i64> {
-    let mut frequencies = HashMap::<i64, usize>::new();
-    let mut most_frequent = None;
-    let mut highest_count = 0;
-
-    for id in array {
-        let count = frequencies.entry(id).or_insert(0);
+// Update the selected album artwork without cloning and rescanning the album's
+// entire artwork history for every imported track. Ties keep the first selected image.
+fn record_album_art_frequency(
+    frequencies: &mut HashMap<i64, usize>,
+    selection: &mut Option<(i64, usize)>,
+    art_id: i64,
+) -> bool {
+    let count = {
+        let count = frequencies.entry(art_id).or_insert(0);
         *count += 1;
-        if *count > highest_count {
-            highest_count = *count;
-            most_frequent = Some(id);
-        }
-    }
+        *count
+    };
 
-    most_frequent
+    match *selection {
+        None => {
+            *selection = Some((art_id, count));
+            true
+        }
+        Some((selected_id, _)) if selected_id == art_id => {
+            *selection = Some((selected_id, count));
+            false
+        }
+        Some((_, selected_count)) if count > selected_count => {
+            *selection = Some((art_id, count));
+            true
+        }
+        _ => false,
+    }
 }
 
 
@@ -706,9 +710,22 @@ mod tests {
     }
 
     #[test]
-    fn most_frequent_cover_art_is_selected_in_linear_counting_pass() {
-        assert_eq!(most_frequent_id(vec![4, 5, 4, 6, 4, 5]), Some(4));
-        assert_eq!(most_frequent_id(vec![9]), Some(9));
-        assert_eq!(most_frequent_id(vec![]), None);
+    fn album_art_frequency_updates_incrementally_and_keeps_stable_ties() {
+        let mut frequencies = HashMap::new();
+        let mut selection = None;
+
+        for id in [4, 5, 4, 6, 4, 5] {
+            record_album_art_frequency(&mut frequencies, &mut selection, id);
+        }
+
+        assert_eq!(selection, Some((4, 3)));
+
+        // A tie does not displace the artwork that reached the count first.
+        assert!(!record_album_art_frequency(&mut frequencies, &mut selection, 5));
+        assert_eq!(selection, Some((4, 3)));
+
+        // The challenger is selected only after it exceeds the current count.
+        assert!(record_album_art_frequency(&mut frequencies, &mut selection, 5));
+        assert_eq!(selection, Some((5, 4)));
     }
 }
