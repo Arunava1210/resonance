@@ -80,3 +80,9 @@ Screenshots
 
 
 
+
+## Native importer
+
+The main library scan is performed in Rust. Resonance walks the selected folder once, parses each supported file with Lofty in a bounded Rayon worker pool, and only uses embedded Python/Mutagen for legacy ASF/WMA/WMV files. Queue edits keep the shuffled and sequential lists consistent, and fuzzy matching reuses a matcher across filter/sort operations.
+
+The Rust importer currently recognises MP3, AIFF, Ogg Vorbis, Opus, FLAC, MP4/M4A, AAC, APE, Musepack, WAV and WavPack. Embedded cover art and the core title/artist/album/genre/date/track/disc tags are imported where present.
