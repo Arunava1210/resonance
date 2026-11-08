@@ -84,6 +84,9 @@ mod imp {
         #[template_child(id = "switch_loop_shuffle")]
         pub switch_loop_shuffle: TemplateChild<gtk::Switch>,
 
+        #[template_child(id = "switch_replaygain_album_mode")]
+        pub switch_replaygain_album_mode: TemplateChild<gtk::Switch>,
+
         #[template_child(id = "add_folder_button")]
         pub add_folder_button: TemplateChild<gtk::Button>,
 
@@ -165,6 +168,7 @@ mod imp {
                 genre_detail_sort: TemplateChild::default(),
                 spin_volume_default: TemplateChild::default(),
                 switch_loop_shuffle: TemplateChild::default(),
+                switch_replaygain_album_mode: TemplateChild::default(),
                 add_folder_button: TemplateChild::default(),
                 dir_list: TemplateChild::default(),
                 play_threshold_adjustment: TemplateChild::default(),
@@ -367,6 +371,15 @@ impl PreferencesWindow {
 
         imp.settings
             .bind("shuffle-mode-loop", &*imp.switch_loop_shuffle, "active")
+            .flags(SettingsBindFlags::DEFAULT)
+            .build();
+
+        imp.settings
+            .bind(
+                "replaygain-album-mode",
+                &*imp.switch_replaygain_album_mode,
+                "active",
+            )
             .flags(SettingsBindFlags::DEFAULT)
             .build();
 
@@ -580,6 +593,11 @@ impl PreferencesWindow {
                 if let Some(variant) = gio::Settings::default_value(&imp.settings, "shuffle-mode-loop") {
                     if let Some(value) = variant.get::<bool>() {
                         _ = imp.settings.set_boolean("shuffle-mode-loop", value);
+                    }
+                }
+                if let Some(variant) = gio::Settings::default_value(&imp.settings, "replaygain-album-mode") {
+                    if let Some(value) = variant.get::<bool>() {
+                        _ = imp.settings.set_boolean("replaygain-album-mode", value);
                     }
                 }
             })
