@@ -662,7 +662,7 @@ mod tests {
 
     #[test]
     fn parses_track_and_disc_numbers_from_prefixed_and_fractional_tags() {
-        let regex = Regex::new(r"^[^\\d]*(\\d+)").unwrap();
+        let regex = Regex::new(r"^[^\d]*(\d+)").unwrap();
 
         assert_eq!(parse_number_tag("Track 03", &regex), Some(3));
         assert_eq!(parse_number_tag("1/12", &regex), Some(1));
@@ -671,7 +671,7 @@ mod tests {
 
     #[test]
     fn number_tag_parser_rejects_missing_and_overflowing_values() {
-        let regex = Regex::new(r"^[^\\d]*(\\d+)").unwrap();
+        let regex = Regex::new(r"^[^\d]*(\d+)").unwrap();
 
         assert_eq!(parse_number_tag("No number", &regex), None);
         assert_eq!(parse_number_tag("999999999999999999999", &regex), None);
