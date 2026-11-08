@@ -242,9 +242,17 @@ impl Player {
             }
         }
 
-        let progress = tick as f64 / self.state().duration();
-        if progress > self.commit_threshold.get() && !self.committed.get() {
-            self.record_play();
+        // A missing/invalid duration can be zero while a stream is changing.
+        // Avoid dividing by zero and accidentally scrobbling an incomplete track.
+        let duration = self.state().duration();
+        if duration.is_finite() && duration > 0.0 {
+            let progress = tick as f64 / duration;
+            if progress.is_finite()
+                && progress > self.commit_threshold.get()
+                && !self.committed.get()
+            {
+                self.record_play();
+            }
         }
     }
 
@@ -339,27 +347,24 @@ impl Player {
     }
 
     pub fn set_track_position(&self, position_second: f64) {
-        //debug!("player set_track_position");
-        let mut seek_second = position_second; 
-        if position_second < 0.0 {
-            seek_second = 0.0;
+        if !position_second.is_finite() {
+            return;
         }
 
-        match self.backend.duration() {
-            Some(d) => {
-                if seek_second <= d {
-                    self.backend.seek(seek_second as u64);
-                }
-            },
-            None => {
-                let d = self.state().current_track().unwrap().duration();
-                if seek_second <= d {
-                    self.backend.seek(seek_second as u64);
-                }
-            }
-        }
+        let seek_second = position_second.max(0.0);
+        let duration = self
+            .backend
+            .duration()
+            .or_else(|| self.state().current_track().map(|track| track.duration()));
 
-        send!(self.discord_sender, DiscordAction::Seek(position_second));
+        let Some(duration) = duration.filter(|duration| duration.is_finite() && *duration > 0.0) else {
+            return;
+        };
+
+        if seek_second <= duration {
+            self.backend.seek(seek_second as u64);
+            send!(self.discord_sender, DiscordAction::Seek(seek_second));
+        }
     }
 
 
