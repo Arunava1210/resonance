@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: resonance-ci-${{ github.ref }}
+  group: resonance-ci-v2-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
