@@ -21,6 +21,9 @@ use log::{debug, error, warn};
 
 use super::player::PlaybackAction;
 
+// Keep duration discovery responsive without polling the GTK main loop every millisecond.
+const DURATION_QUERY_INTERVAL: Duration = Duration::from_millis(100);
+
 #[derive(Debug, Clone, Copy, PartialEq, glib::Enum)]
 #[enum_type(name = "GstPlayerPlaybackState")]
 pub enum BackendPlaybackState {
@@ -45,6 +48,7 @@ pub struct GstPlayer {
     pub clock: RefCell<Option<gst::Clock>>,
     // pub tick: Cell<u64>,
     pub duration: RefCell<Option<f64>>,
+    pub duration_query_source: RefCell<Option<glib::SourceId>>,
     pub volume: Cell<f64>,
     pub replaygain_filter: Option<gst::Element>,
 
@@ -83,6 +87,7 @@ impl GstPlayer {
             clock: RefCell::new(None),
             // tick: Cell::new(0),
             duration: RefCell::new(None),
+            duration_query_source: RefCell::new(None),
             volume: Cell::new(0.0),
             replaygain_filter,
 
@@ -106,6 +111,11 @@ impl GstPlayer {
 
     // STATE
     pub fn set_state(&self, state: BackendPlaybackState) {
+        if state == BackendPlaybackState::Stopped {
+            self.stop_duration_query();
+            self.duration.replace(None);
+        }
+
         if let Err(e) = self.set_pipeline_gst_state(state) {
             error!("setting backend state error: {}", e)
         } else {
@@ -248,6 +258,12 @@ impl GstPlayer {
         }
     }
 
+    fn stop_duration_query(&self) {
+        if let Some(source_id) = self.duration_query_source.borrow_mut().take() {
+            source_id.remove();
+        }
+    }
+
     fn query_duration(&self) -> glib::Continue {
         match self.pipeline_duration() {
             Some(duration) => {
@@ -296,12 +312,22 @@ impl GstPlayer {
 
     fn on_stream_start(self: Rc<Self>) {
         //debug!("BACKEND on_stream_start");
-        let timeout_duration = Duration::from_millis(1);
-        let _source_id = glib::timeout_add_local(timeout_duration,
-            clone!(@strong self as this => @default-return Continue(false) , move || {
-                this.query_duration()
+        self.stop_duration_query();
+        self.duration.replace(None);
+
+        let source_id = glib::timeout_add_local(
+            DURATION_QUERY_INTERVAL,
+            clone!(@strong self as this => @default-return Continue(false), move || {
+                let keep_waiting = this.query_duration();
+                if !keep_waiting {
+                    // The callback returns false, so GLib removes this source after it exits.
+                    // Drop the stored ID without trying to remove the source a second time.
+                    drop(this.duration_query_source.borrow_mut().take());
+                }
+                keep_waiting
             }),
         );
+        self.duration_query_source.replace(Some(source_id));
     }
 
     //CLOCK STUFF
