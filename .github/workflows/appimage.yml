@@ -17,6 +17,7 @@ jobs:
   appimage:
     name: Build portable x86_64 AppImage
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     container:
       image: debian:bookworm-slim
     steps:
@@ -25,8 +26,8 @@ jobs:
 
       - name: Install build and runtime dependencies
         run: |
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+          apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --no-install-recommends \
             bash \
             build-essential \
             ca-certificates \
