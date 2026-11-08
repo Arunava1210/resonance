@@ -60,6 +60,15 @@ fn extension(path: &Path) -> Option<String> {
         .map(|value| value.to_ascii_lowercase())
 }
 
+fn parse_number_tag(value: &str, regex: &Regex) -> Option<u32> {
+    regex
+        .captures(value)?
+        .get(1)?
+        .as_str()
+        .parse::<u32>()
+        .ok()
+}
+
 fn is_hidden(path: &Path) -> bool {
     path.components().any(|component| match component {
         std::path::Component::Normal(name) => name.to_string_lossy().starts_with('.'),
@@ -402,36 +411,10 @@ impl Importer {
                                         date_tag = value[0].clone();
                                     },
                                     "tracknumber" => {
-                                        let tag = re.captures(&value[0]).and_then(|cap| {
-                                            cap.get(0).map(|s| s.as_str())
-                                        });
-                                        track_number_tag = if !tag.is_none() {
-                                            match tag.unwrap().parse::<u32>() {
-                                                Ok(num) => Some(num),
-                                                Err(e) => {
-                                                    error!("{}: {}", tag.unwrap(), e);
-                                                    None
-                                                },
-                                            }
-                                        } else {
-                                            None
-                                        };
+                                        track_number_tag = parse_number_tag(&value[0], &re);
                                     },
                                     "discnumber" => {
-                                        let tag = re.captures(&value[0]).and_then(|cap| {
-                                            cap.get(0).map(|s| s.as_str())
-                                        });
-                                        disc_number_tag = if !tag.is_none() {
-                                            match tag.unwrap().parse::<u32>() {
-                                                Ok(num) => Some(num),
-                                                Err(e) => {
-                                                    error!("{}: {}", tag.unwrap(), e);
-                                                    None
-                                                },
-                                            }
-                                        } else {
-                                            None
-                                        };
+                                        disc_number_tag = parse_number_tag(&value[0], &re);
                                     },
                                     _ => (),
                                 }
@@ -461,38 +444,10 @@ impl Importer {
                                         filetype_tag = value.clone();
                                     },
                                     "tracknumber" => {
-                                        let tag = re.captures(&value).and_then(|cap| {
-                                            cap.get(0).map(|s| s.as_str())
-                                        });
-                                        debug!("{:?}", tag);
-                                        track_number_tag = if !tag.is_none() {
-                                            
-                                            match tag.unwrap().parse::<u32>() {
-                                                Ok(num) => Some(num),
-                                                Err(e) => {
-                                                    error!("{}: {}", tag.unwrap(), e);
-                                                    None
-                                                },
-                                            }
-                                        } else {
-                                            None
-                                        };
+                                        track_number_tag = parse_number_tag(value, &re);
                                     },
                                     "discnumber" => {
-                                        let tag = re.captures(&value).and_then(|cap| {
-                                            cap.get(0).map(|s| s.as_str())
-                                        });
-                                        disc_number_tag = if !tag.is_none() {
-                                            match tag.unwrap().parse::<u32>() {
-                                                Ok(num) => Some(num),
-                                                Err(e) => {
-                                                    error!("{}: {}", tag.unwrap(), e);
-                                                    None
-                                                },
-                                            }
-                                        } else {
-                                            None
-                                        };
+                                        disc_number_tag = parse_number_tag(value, &re);
                                     },
                                     _ => (),
                                 }
@@ -704,6 +659,23 @@ fn record_album_art_frequency(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_track_and_disc_numbers_from_prefixed_and_fractional_tags() {
+        let regex = Regex::new(r"^[^\\d]*(\\d+)").unwrap();
+
+        assert_eq!(parse_number_tag("Track 03", &regex), Some(3));
+        assert_eq!(parse_number_tag("1/12", &regex), Some(1));
+        assert_eq!(parse_number_tag("Disc 02", &regex), Some(2));
+    }
+
+    #[test]
+    fn number_tag_parser_rejects_missing_and_overflowing_values() {
+        let regex = Regex::new(r"^[^\\d]*(\\d+)").unwrap();
+
+        assert_eq!(parse_number_tag("No number", &regex), None);
+        assert_eq!(parse_number_tag("999999999999999999999", &regex), None);
+    }
 
     #[test]
     fn native_reader_accepts_common_lossless_and_lossy_formats() {
