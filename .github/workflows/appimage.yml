@@ -71,6 +71,9 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
+      - name: Generate dependency lockfile
+        run: cargo generate-lockfile
+
       - name: Build and install into AppDir
         shell: bash
         run: |
