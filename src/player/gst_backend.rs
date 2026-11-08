@@ -48,7 +48,7 @@ pub struct GstPlayer {
     pub clock: RefCell<Option<gst::Clock>>,
     // pub tick: Cell<u64>,
     pub duration: RefCell<Option<f64>>,
-    pub duration_query_source: RefCell<Option<glib::SourceId>>,
+    pub duration_query_source: RefCell<Option<glib::source::SourceId>>,
     pub volume: Cell<f64>,
     pub replaygain_filter: Option<gst::Element>,
 
