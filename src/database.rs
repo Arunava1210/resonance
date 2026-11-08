@@ -38,6 +38,8 @@ pub enum DatabaseAction {
     TryLoadingDataBase,
     TryAddMusicFolder(PathBuf),
     ConstructFromTags((String, HashMap<String, HashMap<String, HashMap<String, MapVal>>>, HashMap<String, Vec<u8>>)),
+    ImportProgress(String),
+    ImportFailed(String),
     AddArtistImages(Vec<(i64, Option<(String, Vec<u8>)>)>),
     AddArtistImage((i64, Option<(String, Vec<u8>)>)),
     AddArtistImagesDone(u32),
@@ -186,8 +188,27 @@ impl Database {
             DatabaseAction::ConstructFromTags((folder, tags, cover_art_bytes)) => {
                 match self.construct_from_tags(folder, tags, cover_art_bytes) {
                     Ok(_) => (),
-                    Err(e) => error!("Unable to contrust database from tags: {}", e),
+                    Err(e) => {
+                        error!("Unable to construct database from tags: {}", e);
+                        if let Some(window) = util::window() {
+                            window.set_import_failed("Resonance could not add the imported tracks to its library.");
+                        }
+                        add_error_toast(i18n("Unable to import music folder."));
+                    },
                 }
+            },
+            DatabaseAction::ImportProgress(message) => {
+                if let Some(window) = util::window() {
+                    window.set_import_message("Importing your music library…");
+                    window.set_import_percentage(&message);
+                }
+            },
+            DatabaseAction::ImportFailed(message) => {
+                error!("{}", message);
+                if let Some(window) = util::window() {
+                    window.set_import_failed(&message);
+                }
+                add_error_toast(message);
             },
             DatabaseAction::TryLoadingDataBase => {
                 self.try_loading_database();
@@ -529,7 +550,7 @@ impl Database {
     //Extract tags from music folder with mutagen
     pub fn try_add_music_folder(&self, path: PathBuf) -> Result<(), Box<dyn Error>> {
         let imp = self.imp();
-        let path_str = path.into_os_string().into_string().ok().unwrap();
+        let path_str = path.to_string_lossy().into_owned();
         imp.import_start_time.replace(Some(chrono::offset::Utc::now()));
         self.importer().extract_folder(path_str, imp.db_sender.clone());
         Ok(())

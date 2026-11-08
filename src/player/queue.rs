@@ -65,6 +65,30 @@ pub struct Queue {
     pub settings: gio::Settings,
 }
 
+fn position_after_remove(current: usize, removed: usize, new_len: usize) -> usize {
+    if new_len == 0 {
+        0
+    } else if removed < current {
+        current.saturating_sub(1).min(new_len - 1)
+    } else if removed == current {
+        removed.min(new_len - 1)
+    } else {
+        current.min(new_len - 1)
+    }
+}
+
+fn position_after_move(current: usize, from: usize, to: usize) -> usize {
+    if current == from {
+        to
+    } else if from < current && to >= current {
+        current.saturating_sub(1)
+    } else if from > current && to <= current {
+        current + 1
+    } else {
+        current
+    }
+}
+
 impl Queue {
     pub fn new(queue_sender: Sender<QueueAction>) -> Queue {
         let settings = settings_manager();
@@ -124,11 +148,22 @@ impl Queue {
     }
 
     fn current_song_update(&self) {
-        let queue =  self.queue.borrow();
-        let track = queue[self.current_position.get() as usize].clone();
-        
-        self.current_track.replace(Some(track));
-        send!(self.sender, QueueAction::QueuePositionUpdate(self.position()));
+        let track = self
+            .queue
+            .borrow()
+            .get(self.current_position.get() as usize)
+            .cloned();
+
+        match track {
+            Some(track) => {
+                self.current_track.replace(Some(track));
+                send!(self.sender, QueueAction::QueuePositionUpdate(self.position()));
+            }
+            None => {
+                self.current_track.replace(None);
+                send!(self.sender, QueueAction::QueueEmpty);
+            }
+        }
         self.calculate_time_remaining();
     }
 
@@ -139,8 +174,8 @@ impl Queue {
     }
 
     pub fn add_tracks(&self, tracks: Vec<Rc<Track>>) {
-        self.sequential_queue.borrow_mut().append(tracks.clone().as_mut());
-        self.queue.borrow_mut().append(tracks.clone().as_mut());
+        self.sequential_queue.borrow_mut().extend(tracks.iter().cloned());
+        self.queue.borrow_mut().extend(tracks);
         self.current_song_update();
         if self.repeat_mode.get() == RepeatMode::Shuffle {
             self.shuffle_tracks();
@@ -155,12 +190,6 @@ impl Queue {
             self.current_track.replace(None);
             return;
         }
-        if self.position() >= queue_length {
-           
-            self.end_queue();
-            //self.clear_queue();
-            return;
-        }
         if position >= queue_length {
             return;
         }
@@ -171,38 +200,71 @@ impl Queue {
     }
 
     pub fn remove_track(&self, position_to_remove: usize) {
-        let q_len = self.queue.borrow().len();
+        let queue_len = self.queue.borrow().len();
+        if position_to_remove >= queue_len {
+            return;
+        }
 
-        if q_len <= 1 {
-            self.current_position.set(0);
-            self.current_track.replace(None);
+        if queue_len == 1 {
             self.end_queue();
             return;
         }
 
-        let mut current_position = self.position() as usize;
+        let current_position = self.position() as usize;
+        let removed_track = self.queue.borrow()[position_to_remove].clone();
+        self.queue.borrow_mut().remove(position_to_remove);
 
-        if current_position < position_to_remove {
-            if current_position == 0 {
-                current_position = q_len - 2;
-            } else {
-                current_position -= 1;
-            }
-        } else {
-            if current_position >= (q_len - 1) {
-                current_position = 0;
-            }
+        // Keep the non-shuffled order in sync, including duplicate queue entries.
+        let sequential_index = {
+            self.sequential_queue
+                .borrow()
+                .iter()
+                .position(|track| Rc::ptr_eq(track, &removed_track))
+        };
+        if let Some(sequential_index) = sequential_index {
+            self.sequential_queue.borrow_mut().remove(sequential_index);
         }
 
-        self.queue.borrow_mut().remove(position_to_remove as usize);
-        self.current_position.set(current_position as u64);
+        let next_position = position_after_remove(
+            current_position,
+            position_to_remove,
+            queue_len - 1,
+        );
+
+        self.current_position.set(next_position as u64);
         send!(self.sender, QueueAction::QueueUpdate);
         self.current_song_update();
     }
 
     pub fn reorder_track(&self, old_position: usize, new_position: usize) {
-        self.queue.borrow_mut().swap(old_position, new_position);
-        self.current_position.set(new_position as u64);
+        let queue_len = self.queue.borrow().len();
+        if old_position >= queue_len || new_position >= queue_len || old_position == new_position {
+            return;
+        }
+
+        let current_position = self.position() as usize;
+        let next_position = position_after_move(
+            current_position,
+            old_position,
+            new_position,
+        );
+
+        {
+            let mut queue = self.queue.borrow_mut();
+            let track = queue.remove(old_position);
+            queue.insert(new_position, track);
+        }
+
+        // The sequential copy is authoritative when shuffle is disabled.
+        if self.repeat_mode.get() != RepeatMode::Shuffle {
+            let mut sequential = self.sequential_queue.borrow_mut();
+            if old_position < sequential.len() && new_position < sequential.len() {
+                let track = sequential.remove(old_position);
+                sequential.insert(new_position, track);
+            }
+        }
+
+        self.current_position.set(next_position as u64);
         send!(self.sender, QueueAction::QueueUpdate);
         self.current_song_update();
     }
@@ -213,6 +275,7 @@ impl Queue {
         } else {
             mode
         };
+        let current_track = self.current_track.borrow().clone();
         match mode {
             RepeatMode::Shuffle => {
                 self.shuffle_tracks();
@@ -220,6 +283,17 @@ impl Queue {
             _ => {
                 debug!("Restoring queue from sequential");
                 self.queue.replace(self.sequential_queue.borrow().clone());
+                if let Some(current_track) = current_track {
+                    let restored_position = self.queue.borrow()
+                        .iter()
+                        .position(|track| Rc::ptr_eq(track, &current_track))
+                        .unwrap_or(0);
+                    self.current_position.set(restored_position as u64);
+                    self.current_song_update();
+                } else if self.queue.borrow().is_empty() {
+                    self.current_position.set(0);
+                    self.current_track.replace(None);
+                }
             },
         }
 
@@ -354,12 +428,13 @@ impl Queue {
     }
 
     fn calculate_time_remaining(&self) {
-        let pos = self.position() as usize;
-        let tracks = &self.tracks()[pos..];
-        let mut total_duration = 0.0;
-        for track in tracks.iter() {
-            total_duration += track.duration()
-        }
+        let queue = self.queue.borrow();
+        let position = (self.position() as usize).min(queue.len());
+        let total_duration = queue
+            .iter()
+            .skip(position)
+            .map(|track| track.duration())
+            .sum();
         send!(self.sender, QueueAction::QueueDuration(total_duration));
     }
 
@@ -392,3 +467,26 @@ impl Queue {
     }
 }
     
+
+#[cfg(test)]
+mod tests {
+    use super::{position_after_move, position_after_remove};
+
+    #[test]
+    fn removing_tracks_preserves_or_advances_the_current_position() {
+        assert_eq!(position_after_remove(4, 1, 4), 3);
+        assert_eq!(position_after_remove(2, 4, 4), 2);
+        assert_eq!(position_after_remove(2, 2, 4), 2);
+        assert_eq!(position_after_remove(0, 0, 0), 0);
+        assert_eq!(position_after_remove(9, 1, 4), 3);
+    }
+
+    #[test]
+    fn moving_queue_entries_keeps_the_current_track_selected() {
+        assert_eq!(position_after_move(2, 2, 5), 5);
+        assert_eq!(position_after_move(4, 1, 5), 3);
+        assert_eq!(position_after_move(1, 5, 0), 2);
+        assert_eq!(position_after_move(2, 0, 1), 2);
+        assert_eq!(position_after_move(2, 4, 5), 2);
+    }
+}

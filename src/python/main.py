@@ -22,3 +22,8 @@ def cover_art(directory_path) -> dict:
     logger.debug(f"retrieving cover art from: {directory_path}")
     COVER_ART_HASHMAP = importer.load_folder_coverart(directory_path)
     return COVER_ART_HASHMAP
+
+def tags_and_cover_art_from_files(filepaths):
+    """Read only the legacy formats which are not handled by the native Rust reader."""
+    logger.debug(f"retrieving legacy tags & cover art for {len(filepaths)} files")
+    return importer.get_both(filepaths)

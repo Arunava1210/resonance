@@ -5,7 +5,7 @@ Resonance
 
 Harmonize your listening experience with Resonance. 
 
-Resonance is an intuitive music player application written in Rust & Python, with a clean user interface built using GTK4 / Libadwaita. 
+Resonance is an intuitive music player application written primarily in Rust, with a clean user interface built using GTK4 / Libadwaita and audio playback powered by GStreamer. 
 Resonance lets you effortlessly manage and play your music collection, with support for all the common music file formats such as MP3, FLAC, AAC, and many more.
 
 ⚠️ RESONANCE IS EARLY STAGE ALPHA RELEASE SOFTWARE (THERE ARE BUGS, PLEASE OPEN ISSUES) ⚠️
@@ -21,7 +21,9 @@ Features:
  - Control the player through [MPRIS](https://specifications.freedesktop.org/mpris-spec/latest/)
  - Discord Rich Presence integration
  - Last.fm scrobbling
- - Import tags with the [Mutagen library](https://github.com/quodlibet/mutagen)
+ - Parallel native-Rust library scanning and tag extraction (Lofty + Rayon)
+ - Native metadata and embedded artwork support for MP3, FLAC, Ogg Vorbis, Opus, MP4/M4A, AAC, AIFF, WAV, APE, Musepack and WavPack
+ - Mutagen fallback for legacy ASF/WMA/WMV files
  - No tag editing (intentionally out of scope to keep Resonance a music player only)
 
 <br><br>
@@ -41,7 +43,7 @@ by using this command:
 Building from source
 ----------------------
 
-To build from source you need the gstreamer, gtk4 and libadwaita development headers. Additionally you'll need meson, ninja and git. You'll also need those python runtime libraries: mutagen, tqdm and loguru.
+To build from source you need the GStreamer, GTK4 and Libadwaita development headers. Additionally you'll need Meson, Ninja, Cargo and Git. Python, Mutagen, tqdm and loguru are retained only for the legacy ASF/WMA/WMV metadata fallback.
 
 On a recent enough Ubuntu or Debian unstable you can do the following:
 

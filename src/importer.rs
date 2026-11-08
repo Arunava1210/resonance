@@ -7,27 +7,26 @@
 use gtk::{gio, glib::Sender};
 use gtk_macros::send;
 
-use std::cell::RefCell;
-use std::{collections::HashMap, error::Error, fmt, fs};
-use log::{debug, error};
-use rusqlite::Transaction;
-use pyo3::prelude::*;
+use std::{
+    collections::HashMap,
+    error::Error,
+    path::{Path, PathBuf},
+    thread,
+};
 use chrono::{DateTime, Utc};
-use regex::Regex;
+use log::{debug, error, warn};
+use lofty::{
+    file::{AudioFile, TaggedFileExt},
+    read_from_path,
+    tag::{Accessor, ItemKey},
+};
+use pyo3::prelude::*;
+use rayon::prelude::*;
+use rusqlite::Transaction;
+use walkdir::WalkDir;
 
 use super::database::DatabaseAction;
 use super::util;
-use std::time::{Duration, Instant};
-
-#[derive(Debug)]
-struct ImportError(String);
-impl fmt::Display for ImportError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Import error: {}", self.0)
-        
-    }
-}
-impl Error for ImportError {}
 
 #[derive(Debug, FromPyObject, Clone)]
 pub enum MapVal {
@@ -38,50 +37,178 @@ pub enum MapVal {
     Bytes(Vec<u8>),
 }
 
-#[pyclass]
-struct LoggingStdout {
-    last_update_time: RefCell<Option<Instant>>,
-}
-
-
-#[pymethods]
-impl LoggingStdout {
-    #[new]
-    fn new() -> Self {
-        Self {
-            last_update_time: RefCell::new(None),
-        }
-    }
-
-    fn write(&self, data: &str) {
-        //println!("stdout from python: {:?}", data);
-        if data.contains("ERROR") || data.contains("Exception") {
-            error!("{}", data);
-        } else if data.contains("DEBUG") {
-            debug!("{}", data);
-        } else if data.contains("%"){
-            if let Some(start) = self.last_update_time.take() {
-                if start.elapsed() > Duration::from_secs(3) {
-                    if let Some(window) = util::window() {
-                        window.set_import_percentage(data);
-                    }
-                    self.last_update_time.replace(Some(Instant::now()));
-                } else {
-                    self.last_update_time.replace(Some(start));
-                }
-            } else {
-                if let Some(window) = util::window() {
-                    window.set_import_percentage(data);
-                }
-                self.last_update_time.replace(Some(Instant::now()));
-            }
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct Importer {
     pub settings: gio::Settings,
+}
+
+type TrackTags = HashMap<String, HashMap<String, HashMap<String, MapVal>>>;
+type CoverArt = HashMap<String, Vec<u8>>;
+
+const RUST_METADATA_EXTENSIONS: &[&str] = &[
+    "mp3", "aif", "aiff", "ogg", "opus", "flac", "mp4", "m4a",
+    "aac", "ape", "mpc", "wav", "wv",
+];
+const PYTHON_FALLBACK_EXTENSIONS: &[&str] = &["asf", "wma", "wmv"];
+const IMPORT_BATCH_SIZE: usize = 96;
+
+fn extension(path: &Path) -> Option<String> {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase())
+}
+
+fn is_hidden(path: &Path) -> bool {
+    path.file_name()
+        .map(|name| name.to_string_lossy().starts_with('.'))
+        .unwrap_or(false)
+}
+
+fn list_audio_files(folder: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let mut rust_files = Vec::new();
+    let mut legacy_files = Vec::new();
+
+    for entry in WalkDir::new(folder).follow_links(false).into_iter() {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                warn!("Unable to read a music-library entry: {}", err);
+                continue;
+            }
+        };
+
+        let path = entry.path();
+        if !entry.file_type().is_file() || is_hidden(path) {
+            continue;
+        }
+
+        match extension(path).as_deref() {
+            Some(ext) if RUST_METADATA_EXTENSIONS.contains(&ext) => rust_files.push(path.to_path_buf()),
+            Some(ext) if PYTHON_FALLBACK_EXTENSIONS.contains(&ext) => legacy_files.push(path.to_path_buf()),
+            _ => {}
+        }
+    }
+
+    rust_files.sort();
+    legacy_files.sort();
+    (rust_files, legacy_files)
+}
+
+fn insert_list(target: &mut HashMap<String, MapVal>, key: &str, value: Option<String>) {
+    if let Some(value) = value.filter(|value| !value.trim().is_empty()) {
+        target.insert(key.to_owned(), MapVal::List(vec![value]));
+    }
+}
+
+fn extract_with_lofty(path: &Path) -> Option<(String, HashMap<String, HashMap<String, MapVal>>, Option<Vec<u8>>)> {
+    let tagged_file = match read_from_path(path) {
+        Ok(file) => file,
+        Err(err) => {
+            debug!("Skipping unreadable audio file {}: {}", path.display(), err);
+            return None;
+        }
+    };
+
+    let tag = tagged_file.primary_tag().or_else(|| tagged_file.first_tag());
+    let fallback_title = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "Unknown Track".to_owned());
+
+    let (title, artist, album_artist, album, genre, date, track_number, disc_number, picture) =
+        if let Some(tag) = tag {
+            let artist = tag.artist().map(|value| value.into_owned());
+            let album_artist = tag
+                .get_string(ItemKey::AlbumArtist)
+                .map(str::to_owned)
+                .or_else(|| artist.clone())
+                .unwrap_or_else(|| "Unknown Artist".to_owned());
+
+            (
+                tag.title().map(|value| value.into_owned()).unwrap_or(fallback_title),
+                artist.unwrap_or_default(),
+                album_artist,
+                tag.album().map(|value| value.into_owned()).unwrap_or_else(|| "Unknown Album".to_owned()),
+                tag.genre().map(|value| value.into_owned()),
+                tag.date().map(|value| value.to_string()),
+                tag.track(),
+                tag.disk(),
+                tag.pictures().first().map(|picture| picture.data().to_vec()),
+            )
+        } else {
+            (
+                fallback_title,
+                String::new(),
+                "Unknown Artist".to_owned(),
+                "Unknown Album".to_owned(),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+        };
+
+    let mut strings = HashMap::new();
+    insert_list(&mut strings, "title", Some(title));
+    insert_list(&mut strings, "artist", Some(artist));
+    insert_list(&mut strings, "albumartist", Some(album_artist));
+    insert_list(&mut strings, "album", Some(album));
+    insert_list(&mut strings, "genre", genre);
+    insert_list(&mut strings, "date", date);
+    insert_list(&mut strings, "tracknumber", track_number.map(|number| number.to_string()));
+    insert_list(&mut strings, "discnumber", disc_number.map(|number| number.to_string()));
+
+    let mut string_values = HashMap::new();
+    let file_type = extension(path).map(|value| format!(".{value}")).unwrap_or_default();
+    string_values.insert("filetype_".to_owned(), MapVal::Str(file_type));
+
+    let mut float_values = HashMap::new();
+    float_values.insert(
+        "duration".to_owned(),
+        MapVal::Float(tagged_file.properties().duration().as_secs_f32()),
+    );
+
+    let mut grouped = HashMap::new();
+    grouped.insert("str_list".to_owned(), strings);
+    grouped.insert("str".to_owned(), string_values);
+    grouped.insert("float".to_owned(), float_values);
+
+    Some((path.to_string_lossy().into_owned(), grouped, picture))
+}
+
+fn merge_legacy_python(paths: &[PathBuf]) -> Result<(TrackTags, CoverArt), Box<dyn Error>> {
+    if paths.is_empty() {
+        return Ok((HashMap::new(), HashMap::new()));
+    }
+
+    let path_strings = paths
+        .iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+
+    let result = Python::with_gil(|py| -> PyResult<(TrackTags, CoverArt)> {
+        let code_main = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/main.py"));
+        let code_extracting = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/extracting.py"));
+        let code_importer = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/importer.py"));
+        let code_translate_dicts = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/translate_dicts.py"));
+        let code_util = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/util.py"));
+
+        PyModule::from_code(py, code_util, "util", "util")?;
+        PyModule::from_code(py, code_translate_dicts, "translate_dicts", "translate_dicts")?;
+        PyModule::from_code(py, code_extracting, "extracting", "extracting")?;
+        PyModule::from_code(py, code_importer, "importer", "importer")?;
+
+        let module = PyModule::from_code(py, code_main, "main", "main")?;
+        let object: Py<PyAny> = module
+            .getattr("tags_and_cover_art_from_files")?
+            .call1((path_strings,))?
+            .into();
+        let all = object.extract(py)?;
+        Ok(all)
+    });
+
+    result.map_err(|err| Box::new(err) as Box<dyn Error>)
 }
 
 impl Importer {
@@ -92,60 +219,100 @@ impl Importer {
     }
 
     pub fn extract_folder(&self, folder_path: String, sender: Sender<DatabaseAction>) {
-        std::thread::spawn(move || {
-            let from_python = Python::with_gil(|py| -> Result<(), Box<dyn Error>> {
-                let sys = py.import("sys")?;
-                sys.setattr("stderr", LoggingStdout::new().into_py(py))?;
-                py.run("print('importing')", None, None)?;
+        thread::spawn(move || {
+            send!(
+                sender,
+                DatabaseAction::ImportProgress("Finding audio files…".to_owned())
+            );
 
-                let window = util::window();
+            let (rust_files, legacy_files) = list_audio_files(Path::new(&folder_path));
+            let total = rust_files.len() + legacy_files.len();
+            if total == 0 {
+                send!(
+                    sender,
+                    DatabaseAction::ImportFailed(format!("No supported audio files were found in {folder_path}"))
+                );
+                return;
+            }
 
-                if let Some(w) = window {
-                    w.set_import_message("Extracting tags from music files.");
-                
-                    let code_main = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/main.py"));
-                    let code_extracting = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/extracting.py"));
-                    let code_importer = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/importer.py"));
-                    let code_translate_dicts = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/translate_dicts.py"));
-                    let code_util = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/python/util.py"));
-        
-                    PyModule::from_code(py, code_util, "util", "util")?;
-                    PyModule::from_code(py, code_translate_dicts,"translate_dicts", "translate_dicts")?;
-                    PyModule::from_code(py, code_extracting, "extracting", "extracting")?;
-                    PyModule::from_code(py, code_importer, "importer", "importer")?;
-        
-                    let module = PyModule::from_code(py, code_main, "main", "")?;
-                    let args = (&folder_path,);
-                    let object: Py<PyAny> = module
-                        .getattr("tags_and_cover_art")?
-                        .call1(args)
-                        .map_err(|e| {
-                            e.print_and_set_sys_last_vars(py);
-                            e
-                        })?
-                        .into();
-        
-                    debug!("retrieving tags & cover art ... ");
-        
-                    let all: (HashMap<String, HashMap<String, HashMap<String, MapVal>>>, HashMap<String, &[u8]>) = object.extract(py)?;
-                    let (tags, bytes_map) = all;
-                    if tags.is_empty() {
-                        error!("Nothing extracted.");
-                        return Err(Box::new(ImportError("Tag Map Empty".into())));
+            let worker_count = thread::available_parallelism()
+                .map(|count| count.get())
+                .unwrap_or(4)
+                .clamp(1, 8);
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(worker_count)
+                .build();
+
+            let mut tags: TrackTags = HashMap::with_capacity(total);
+            let mut cover_art: CoverArt = HashMap::new();
+            let mut processed = 0usize;
+
+            for chunk in rust_files.chunks(IMPORT_BATCH_SIZE) {
+                let parsed = match &pool {
+                    Ok(pool) => pool.install(|| {
+                        chunk.par_iter().filter_map(|path| extract_with_lofty(path)).collect::<Vec<_>>()
+                    }),
+                    Err(_) => chunk.iter().filter_map(|path| extract_with_lofty(path)).collect::<Vec<_>>(),
+                };
+
+                for (uri, metadata, picture) in parsed {
+                    tags.insert(uri.clone(), metadata);
+                    if let Some(picture) = picture {
+                        cover_art.insert(uri, picture);
                     }
-
-                    let mut vec_byte_map: HashMap<String, Vec<u8>> = HashMap::new();
-                    for (uri, b) in bytes_map.iter() {
-                        vec_byte_map.insert(uri.clone(), (*b).to_vec());
-                    }
-
-                    send!(sender, DatabaseAction::ConstructFromTags((folder_path, tags, vec_byte_map)));
-                } else {
-                    error!("Unable to retrieve window.")
                 }
-                Ok(())
-            });
-            from_python.unwrap();
+
+                processed += chunk.len();
+                let percentage = processed.saturating_mul(100) / total;
+                send!(
+                    sender,
+                    DatabaseAction::ImportProgress(format!(
+                        "Reading metadata: {processed}/{total} ({percentage}%)"
+                    ))
+                );
+            }
+
+            if !legacy_files.is_empty() {
+                send!(
+                    sender,
+                    DatabaseAction::ImportProgress(format!(
+                        "Reading metadata for {} legacy ASF/WMA files…",
+                        legacy_files.len()
+                    ))
+                );
+
+                match merge_legacy_python(&legacy_files) {
+                    Ok((legacy_tags, legacy_art)) => {
+                        tags.extend(legacy_tags);
+                        cover_art.extend(legacy_art);
+                    }
+                    Err(err) => {
+                        error!("Legacy metadata fallback failed: {}", err);
+                    }
+                }
+            }
+
+            if tags.is_empty() {
+                send!(
+                    sender,
+                    DatabaseAction::ImportFailed(format!(
+                        "No readable audio metadata was found in {folder_path}"
+                    ))
+                );
+                return;
+            }
+
+            debug!(
+                "Extracted metadata for {} tracks ({} artwork files) from {}",
+                tags.len(),
+                cover_art.len(),
+                folder_path
+            );
+
+            send!(
+                sender,
+                DatabaseAction::ConstructFromTags((folder_path, tags, cover_art))
+            );
         });
     }
 
@@ -464,14 +631,14 @@ impl Importer {
                     if let Some(ids) = album_art.get_mut(&album_id) {
                         ids.push(art_id);
     
-                        if let Some(album_art) = most_frequest_id(ids.clone()) {
+                        if let Some(album_art) = most_frequent_id(ids.clone()) {
                             database.update_album_art(&tx, album_id, album_art)?;
                         }
                     } else {
                         let mut ids = Vec::new();
                         ids.push(art_id);
 
-                        if let Some(album_art) = most_frequest_id(ids.clone()) {
+                        if let Some(album_art) = most_frequent_id(ids.clone()) {
                             database.update_album_art(&tx, album_id, album_art)?;
                         }
 
@@ -489,26 +656,49 @@ impl Importer {
     }
 }
 
-fn most_frequest_id(array: Vec<i64>) -> Option<i64> {
-    if array.len() <= 0 {
-        return None;
-    }
+fn most_frequent_id(array: Vec<i64>) -> Option<i64> {
+    let mut frequencies = HashMap::<i64, usize>::new();
+    let mut most_frequent = None;
+    let mut highest_count = 0;
 
-    let mut max_count = 0;
-    let mut element_having_max_freq = None;
-
-    for i in 0..array.len() {
-        let mut count = 0;
-        for j in 0..array.len() {
-            if array[i] == array[j] {
-                count+=1;
-            }
-        }
-        if count > max_count {
-            max_count = count;
-            element_having_max_freq = Some(array[i]);
+    for id in array {
+        let count = frequencies.entry(id).or_insert(0);
+        *count += 1;
+        if *count > highest_count {
+            highest_count = *count;
+            most_frequent = Some(id);
         }
     }
 
-    element_having_max_freq
+    most_frequent
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_reader_accepts_common_lossless_and_lossy_formats() {
+        for file in ["track.MP3", "album.flac", "disc.aiff", "track.ogg", "track.opus", "song.m4a", "song.wav", "song.ape", "song.mpc", "song.wv"] {
+            let ext = extension(Path::new(file)).unwrap();
+            assert!(RUST_METADATA_EXTENSIONS.contains(&ext.as_str()), "unexpected native format: {file}");
+        }
+    }
+
+    #[test]
+    fn legacy_reader_is_limited_to_windows_media_formats() {
+        for file in ["song.asf", "song.wma", "song.wmv"] {
+            let ext = extension(Path::new(file)).unwrap();
+            assert!(PYTHON_FALLBACK_EXTENSIONS.contains(&ext.as_str()), "unexpected fallback format: {file}");
+        }
+        assert!(!PYTHON_FALLBACK_EXTENSIONS.contains(&"mp3"));
+    }
+
+    #[test]
+    fn most_frequent_cover_art_is_selected_in_linear_counting_pass() {
+        assert_eq!(most_frequent_id(vec![4, 5, 4, 6, 4, 5]), Some(4));
+        assert_eq!(most_frequent_id(vec![9]), Some(9));
+        assert_eq!(most_frequent_id(vec![]), None);
+    }
 }

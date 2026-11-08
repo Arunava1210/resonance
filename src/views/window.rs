@@ -445,6 +445,17 @@ impl Window {
         }
     }
 
+    pub fn set_import_failed(&self, message: &str) {
+        let imp = self.imp();
+        imp.spinner.stop();
+        imp.spinner.hide();
+        imp.add_library_button.show();
+        imp.welcome_status.set_title(&i18n("Import failed"));
+        imp.welcome_status.set_description(Some(message));
+        imp.welcome_info_label.hide();
+        imp.welcome_percentage_label.hide();
+    }
+
     fn bind_signals(&self) {
         debug!("bind signals");
 
